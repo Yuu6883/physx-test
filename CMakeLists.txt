@@ -24,9 +24,15 @@ set(SRC_FILES
     "src/main.cpp"
 )
 
-set(SRC_HEADLESS_FILES
+set(SRC_HEADLESS_SERVER_FILES
     "src/world/world.cpp"
+    "src/network/server.cpp"
     "src/headless/main.cpp"
+)
+
+set(SRC_TEST_CLIENT_FILES
+    "src/network/client.cpp"
+    "src/headless/test-client.cpp"
 )
 
 if (WIN32)
@@ -51,16 +57,25 @@ else()
     )
 endif()
 
-if (WIN32)
-    add_executable(server ${SRC_HEADLESS_FILES})
-    target_link_libraries(server ${PHYSX_LIBS})
+find_package(msquic CONFIG REQUIRED)
 
-    # set(OpenGL_GL_PREFERENCE LEGACY)
-    # find_package(OpenGL REQUIRED)
-    # find_package(GLUT REQUIRED)
-    # add_executable(server ${SRC_FILES})
-    # target_link_libraries(server ${PHYSX_LIBS} ${OPENGL_LIBRARIES} freeglut)
+if (WIN32)
+
+    add_executable("test-client" ${SRC_TEST_CLIENT_FILES})
+    target_link_libraries("test-client" msquic)
+
+    if (DEFINED GUI)
+        set(OpenGL_GL_PREFERENCE LEGACY)
+        find_package(OpenGL REQUIRED)
+        find_package(GLUT REQUIRED)
+        add_executable(server ${SRC_FILES} "src/network/server.hpp" "src/network/server.cpp" "src/network/sample.c")
+        target_link_libraries(server ${PHYSX_LIBS} ${OPENGL_LIBRARIES} freeglut msquic)
+    else()
+        add_executable(server ${SRC_HEADLESS_SERVER_FILES})
+        target_link_libraries(server ${PHYSX_LIBS} msquic)
+    endif()
+    
 else()
-    add_executable(server ${SRC_HEADLESS_FILES})
+    add_executable(server ${SRC_HEADLESS_SERVER_FILES})
     target_link_libraries(server pthread ${PHYSX_LIBS} dl)
 endif()
