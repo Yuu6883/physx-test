@@ -3,6 +3,10 @@
 
 #include <iomanip>
 #include <sstream>
+#include <chrono>
+#include <thread>
+
+using namespace std::chrono;
 
 static float cylinderData[] = {
 	1.0f,0.0f,1.0f,1.0f,0.0f,1.0f,1.0f,0.0f,0.0f,1.0f,0.0f,0.0f,
@@ -112,7 +116,7 @@ void Renderer::onResize(int w, int h) {
     glViewport(0, 0, w, h);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(60, (GLfloat) w / (GLfloat) h, 0.1f, 100.0f);
+	gluPerspective(75, (GLfloat) w / (GLfloat) h, 0.1f, 250.0f);
 	glMatrixMode(GL_MODELVIEW);
 }
 
@@ -130,9 +134,20 @@ void Renderer::onRender() {
 
     std::stringstream stream;
     stream << "FPS: " << std::fixed << std::setprecision(2) << fps;
-    auto s = stream.str();
+    auto fpsStr = stream.str();
 
-    if (currentWorld) currentWorld->step(elapsedTime * 0.001f);
+	stream.str(std::string());
+	if (currentWorld) {
+		auto start = high_resolution_clock::now();
+		currentWorld->step(elapsedTime * 0.001f);
+		auto end = high_resolution_clock::now();
+
+		stream << "Tick: " << std::fixed << std::setprecision(2) << duration_cast<microseconds>(end - start).count() / 1000.f << " ms";
+	} else {
+		stream << "No world attached to renderer";
+	}
+
+	auto tickStr = stream.str();
 
 	// Setup GL
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -143,7 +158,7 @@ void Renderer::onRender() {
 
 	// Render grid and axes
 	renderAxes();
-	renderGrid(100);
+	renderGrid(250);
 	// Render PhysX objects
 	glEnable(GL_LIGHTING);
 	renderWorld();
@@ -152,7 +167,8 @@ void Renderer::onRender() {
 	// Show the fps
 	ortho(windowW, windowH);
 	glColor3f(1, 1, 1);
-	renderString(20, 20, 0, GLUT_BITMAP_HELVETICA_12, stream.str());
+	renderString(10, 20, 0, GLUT_BITMAP_HELVETICA_12, fpsStr);
+	renderString(10, 40, 0, GLUT_BITMAP_HELVETICA_12, tickStr);
 
 	perspective();
 
@@ -177,7 +193,7 @@ void Renderer::perspective() {
 	glMatrixMode(GL_MODELVIEW);
 }
 
-void Renderer::renderString(int x, int y, int space, void* font, std::string&& text) {
+void Renderer::renderString(int x, int y, int space, void* font, std::string text) {
 	for (int i = 0; i < text.length(); i++) {
 		glRasterPos2i(x, y);
 		glutBitmapCharacter(font, text.at(i));
@@ -194,6 +210,7 @@ void Renderer::renderAxes() {
 	glPushMatrix();
 	glTranslatef(0, 0, 0.8f);
 	glutSolidCone(0.0325, 0.2, 4, 1);
+
 	// Draw label			
 	glTranslatef(0, 0.0625, 0.225f);
 	renderString(0, 0, 0, GLUT_BITMAP_HELVETICA_10, "Z");
@@ -205,6 +222,7 @@ void Renderer::renderAxes() {
 	glPushMatrix();
 	glTranslatef(0, 0, 0.8f);
 	glutSolidCone(0.0325, 0.2, 4, 1);
+
 	// Draw label
 	glTranslatef(0, 0.0625, 0.225f);
 	renderString(0, 0, 0, GLUT_BITMAP_HELVETICA_10, "X");
@@ -216,6 +234,7 @@ void Renderer::renderAxes() {
 	glPushMatrix();
 	glTranslatef(0, 0, 0.8f);
 	glutSolidCone(0.0325, 0.2, 4, 1);
+
 	// Draw label
 	glTranslatef(0, 0.0625, 0.225f);
 	renderString(0, 0, 0, GLUT_BITMAP_HELVETICA_10, "Y");
@@ -226,7 +245,7 @@ void Renderer::renderAxes() {
 
 void Renderer::renderGrid(float size) {
     glBegin(GL_LINES);
-	glColor3f(0.75f, 0.75f, 0.75f);
+	glColor4f(0.75f, 0.75f, 0.75f, 0.5f);
 	for (float i = -size; i <= size; i++)
 	{
 		glVertex3f(i, 0, -size);
@@ -422,7 +441,7 @@ void Renderer::renderActors(const vector<PxRigidActor*>& actors, bool shadow, co
 			glPushMatrix();
 			glMultMatrixf(reinterpret_cast<const float*>(&shapePose));
 			if (sleeping) {
-				PxVec3 darkColor = color * 0.25f;
+				PxVec3 darkColor = color * 0.5f;
 				glColor4f(darkColor.x, darkColor.y, darkColor.z, 1.0f);
 			} else {
 				glColor4f(color.x, color.y, color.z, 1.0f);
@@ -463,6 +482,7 @@ void Renderer::renderWorld() {
 
 void Renderer::loop() {
 	running = true;
+	std::this_thread::sleep_for(seconds{ 3 });
 	timer(0, this);
     glutMainLoop();
 	running = false;

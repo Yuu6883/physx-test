@@ -1,9 +1,5 @@
 #pragma once
 
-#ifndef NDEBUG
-#define NDEBUG
-#endif
-
 #include <PxPhysicsAPI.h>
 #include <PxPhysicsVersion.h>
 #include <PxPhysics.h>

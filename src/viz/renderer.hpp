@@ -36,11 +36,11 @@ class Renderer {
     void ortho(int w, int h);
     void perspective();
 
-    void renderString(int x, int y, int space, void* font, std::string&& text);
+    void renderString(int x, int y, int space, void* font, std::string text);
     void renderAxes();
     void renderGrid(float size);
     void renderGeometry(const PxGeometryHolder& obj);
-    void renderActors(const vector<PxRigidActor*>& actors, bool shadow = false, const PxVec3& color = PxVec3(0.0f, 0.75f, 0.0f));
+    void renderActors(const vector<PxRigidActor*>& actors, bool shadow = false, const PxVec3& color = PxVec3(0.75f, 0.75f, 0.75f));
     void renderWorld();
 
     static void timer(int value, void* self);
