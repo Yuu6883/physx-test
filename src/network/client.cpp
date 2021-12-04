@@ -16,7 +16,50 @@ HQUIC Registration;
 // QUIC layer settings.
 HQUIC Configuration;
 
+QUIC_STATUS ClientStreamCallback(HQUIC stream, void* self, QUIC_STREAM_EVENT* Event) {
+    auto client = static_cast<QuicClient*>(self);
+
+    switch (Event->Type) {
+        case QUIC_STREAM_EVENT_START_COMPLETE:
+            printf("[strm][%p] Stream started\n", stream);
+            break;
+        case QUIC_STREAM_EVENT_SEND_COMPLETE:
+            // A previous StreamSend call has completed, and the context is being
+            // returned back to the app.
+            delete static_cast<QuicClient::SendReq*>(Event->SEND_COMPLETE.ClientContext);
+            printf("[strm][%p] Data sent\n", stream);
+            break;
+        case QUIC_STREAM_EVENT_RECEIVE:
+            // Data was received from the peer on the stream.
+            printf("[strm][%p] Received %u buffers\n", stream, Event->RECEIVE.BufferCount);
+            for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
+                auto& buf = Event->RECEIVE.Buffers[i];
+                printf("Buffers[%u] = %.*s\n", i, buf.Length, buf.Buffer);
+            }
+            break;
+        case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
+            // Server gracefully shut down its send direction of the stream.
+            printf("[strm][%p] Peer aborted\n", stream);
+            break;
+        case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
+            // Server aborted its send direction of the stream.
+            printf("[strm][%p] Peer shut down\n", stream);
+            break;
+        case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
+            // Both directions of the stream have been shut down and MsQuic is done
+            // with the stream. It can now be safely cleaned up.
+            printf("[strm][%p] Stream shutdown complete\n", stream);
+            MsQuic->StreamClose(stream);
+            break;
+        default:
+            break;
+    }
+    return QUIC_STATUS_SUCCESS;
+}
+
 QUIC_STATUS ClientConnectionCallback(HQUIC conn, void* self, QUIC_CONNECTION_EVENT* Event) {
+    auto client = static_cast<QuicClient*>(self);
+
     switch (Event->Type) {
         case QUIC_CONNECTION_EVENT_CONNECTED:
             // The handshake has completed for the connection.
@@ -35,12 +78,12 @@ QUIC_STATUS ClientConnectionCallback(HQUIC conn, void* self, QUIC_CONNECTION_EVE
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
             // The connection was explicitly shut down by the peer.
-            printf("[conn][%p] Shut down by peer, 0x%llu\n", conn, (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
+            printf("[conn][%p] Shutdown by server, 0x%llu\n", conn, (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
             // The connection has completed the shutdown process and is ready to be
             // safely cleaned up.
-            printf("[conn][%p] All done\n", conn);
+            printf("[conn][%p] Shutdown complete\n", conn);
             if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
                 MsQuic->ConnectionClose(conn);
             }
@@ -54,7 +97,20 @@ QUIC_STATUS ClientConnectionCallback(HQUIC conn, void* self, QUIC_CONNECTION_EVE
             }
             printf("\n");
             break;
+        case QUIC_CONNECTION_EVENT_STREAMS_AVAILABLE:
+            printf("Available stream count: bi = %u, uni = %u\n",
+                Event->STREAMS_AVAILABLE.BidirectionalCount,
+                Event->STREAMS_AVAILABLE.UnidirectionalCount);
+            break;
+        case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
+            // The server has created a new stream. The app MUST set the callback handler before returning.
+            printf("[strm][%p] Stream started by server \n", Event->PEER_STREAM_STARTED.Stream);
+            client->stream = Event->PEER_STREAM_STARTED.Stream;
+            MsQuic->SetCallbackHandler(Event->PEER_STREAM_STARTED.Stream, (void*) ClientStreamCallback, client);
+            break;
         default:
+            // TODO: anything else important to handle?
+            printf("[conn][%p] Unhandled Event: %u\n", conn, uint8_t(Event->Type));
             break;
     }
     return QUIC_STATUS_SUCCESS;
@@ -84,8 +140,11 @@ int QuicClient::init(bool insecure) {
     QUIC_SETTINGS Settings = { 0 };
 
     // Configures the client's idle timeout.
-    Settings.IdleTimeoutMs = 1000;
+    Settings.IdleTimeoutMs = 5000;
     Settings.IsSet.IdleTimeoutMs = TRUE;
+
+    Settings.PeerBidiStreamCount = 1;
+    Settings.IsSet.PeerBidiStreamCount = TRUE;
 
     // Configures a default client configuration, optionally disabling
     // server certificate validation.
@@ -100,7 +159,7 @@ int QuicClient::init(bool insecure) {
 
     // The protocol name used in the Application Layer Protocol Negotiation (ALPN).
     const string PROTO_NAME = "physx-quic";
-    const QUIC_BUFFER ALPN({ (uint32_t)PROTO_NAME.length(), (uint8_t*) PROTO_NAME.data() });
+    const QUIC_BUFFER ALPN({ (uint32_t) PROTO_NAME.length(), (uint8_t*) PROTO_NAME.data() });
 
     // Allocate/initialize the configuration object, with the configured ALPN
     // and settings.
@@ -127,7 +186,7 @@ bool QuicClient::connect(string host, uint16_t port) {
     QUIC_STATUS status = QUIC_STATUS_SUCCESS;
 
     // Allocate a new connection object.
-    status = MsQuic->ConnectionOpen(Registration, ClientConnectionCallback, NULL, &conn);
+    status = MsQuic->ConnectionOpen(Registration, ClientConnectionCallback, this, &conn);
     if (QUIC_FAILED(status)) {
         printf("ConnectionOpen failed, 0x%x!\n", status);
         return false;
@@ -152,6 +211,8 @@ bool QuicClient::connect(string host, uint16_t port) {
         printf("ConnectionStart failed, 0x%x!\n", status);
         return false;
     }
+
+    return true;
 }
 
 bool QuicClient::disconnect() {
@@ -160,6 +221,16 @@ bool QuicClient::disconnect() {
         conn = nullptr;
         return true;
     } else return false;
+}
+
+bool QuicClient::send(string_view buffer, bool freeAfterSend) {
+    if (!stream) return false;
+    auto buffers = new QUIC_BUFFER[1];
+    buffers[0].Buffer = (uint8_t*) buffer.data();
+    buffers[0].Length = buffer.size();
+    auto req = new SendReq{ 1, buffers, freeAfterSend };
+    auto status = MsQuic->StreamSend(stream, buffers, 1, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
+    return !QUIC_FAILED(status);
 }
 
 void QuicClient::cleanup() {

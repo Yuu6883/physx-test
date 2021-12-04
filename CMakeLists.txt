@@ -4,7 +4,12 @@ project (physx-server CXX)
 
 if (WIN32)
     include_directories(${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/)
-    link_directories(${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/)
+    message("Arch: ${VCPKG_TARGET_TRIPLET}, Build type: ${CMAKE_BUILD_TYPE}")
+    if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+        link_directories(${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib/)
+    else()
+        link_directories(${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/)
+    endif()
 else()
     include_directories($ENV{VCPKG_ROOT}/installed/x64-linux/include/)
     link_directories($ENV{VCPKG_ROOT}/installed/x64-linux/lib/)
@@ -27,7 +32,7 @@ set(SRC_FILES
 set(SRC_HEADLESS_SERVER_FILES
     "src/world/world.cpp"
     "src/network/server.cpp"
-    "src/headless/main.cpp"
+    "src/headless/test-server.cpp"
 )
 
 set(SRC_TEST_CLIENT_FILES
@@ -57,9 +62,9 @@ else()
     )
 endif()
 
-find_package(msquic CONFIG REQUIRED)
 
 if (WIN32)
+    find_package(msquic CONFIG REQUIRED)
 
     add_executable("test-client" ${SRC_TEST_CLIENT_FILES})
     target_link_libraries("test-client" msquic)
@@ -68,7 +73,7 @@ if (WIN32)
         set(OpenGL_GL_PREFERENCE LEGACY)
         find_package(OpenGL REQUIRED)
         find_package(GLUT REQUIRED)
-        add_executable(server ${SRC_FILES} "src/network/server.hpp" "src/network/server.cpp" "src/network/sample.c")
+        add_executable(server ${SRC_FILES})
         target_link_libraries(server ${PHYSX_LIBS} ${OPENGL_LIBRARIES} freeglut msquic)
     else()
         add_executable(server ${SRC_HEADLESS_SERVER_FILES})
@@ -76,6 +81,9 @@ if (WIN32)
     endif()
     
 else()
+    add_executable("test-client" ${SRC_TEST_CLIENT_FILES})
+    target_link_libraries("test-client" msquic)
+
     add_executable(server ${SRC_HEADLESS_SERVER_FILES})
-    target_link_libraries(server pthread ${PHYSX_LIBS} dl)
+    target_link_libraries(server ${PHYSX_LIBS} msquic dl)
 endif()

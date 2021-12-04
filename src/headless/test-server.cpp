@@ -22,7 +22,11 @@ int main() {
     int i = 0;
     while (true) {
         world->step(0);
-        // std::this_thread::sleep_for(std::chrono::milliseconds{ 10 });
+        std::this_thread::sleep_for(std::chrono::milliseconds{ 1000 });
+        constexpr char msg[] = "Hello world";
+        auto ptr = (char*) malloc(sizeof(msg));
+        strcpy(ptr, msg);
+        server->broadcast(string_view(msg, sizeof(msg)), true);
     }
 
     delete world;

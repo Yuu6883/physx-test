@@ -53,7 +53,7 @@ World::World() {
 
 	auto t = 4; // std::thread::hardware_concurrency();
 
-	printf("Hardware threads: %u\n", t);
+	printf("Using %u threads\n", t);
 
 	dispatcher = PxDefaultCpuDispatcherCreate(t);
 	sceneDesc.cpuDispatcher = dispatcher;
@@ -75,7 +75,7 @@ World::~World() {
 }
 
 void World::initScene() {
-    auto material = physics->createMaterial(0.1f, 0.1f, 0.5f);
+    auto material = physics->createMaterial(0.5f, 0.5f, 0.25f);
     
 	auto ground = PxCreatePlane(*physics, PxPlane(0, 1, 0, 0), *material);
 	scene->addActor(*ground);
@@ -99,24 +99,30 @@ void World::initScene() {
 		shape->release();
 	*/
 
-	for (int x = 0; x < 1; x++) {
-		for (int stack = 0; stack < 20; stack++) {
-			for (int i = 1; i < 20; i++) {
-				for (int j = 1; j < 20; j++) {
-					auto dynamic = PxCreateDynamic(*physics, PxTransform(PxVec3(i + x * 50, stack + 0.0001f, j)), 
-						PxBoxGeometry(0.48f, 0.48f, 0.48f), *material, 10.0f);
-					dynamic->setAngularDamping(0.5f);
-					scene->addActor(*dynamic);
-				}
+	for (int stack = 0; stack < 20; stack++) {
+		for (int i = -10; i <= 10; i++) {
+			for (int j = -10; j < 10; j++) {
+				auto dynamic = PxCreateDynamic(*physics, PxTransform(PxVec3(i , stack + 0.495f * 0.5f, j)), 
+					PxBoxGeometry(0.495f, 0.495f, 0.495f), *material, 10.0f);
+				dynamic->setAngularDamping(0.2f);
+				scene->addActor(*dynamic);
 			}
 		}
 	}
 
+	
+
+	/*
+	auto panel = PxCreateDynamic(*physics, PxTransform(PxVec3(0.f, 20.f, 0.f)),
+		PxBoxGeometry(10.f, 0.48f, 10.f), *material, 10.0f);
+	scene->addActor(*panel);
+	*/
+
 	// Destroyer ball
-	auto dynamic = PxCreateDynamic(*physics, PxTransform(PxVec3(10, 50, 10)), PxSphereGeometry(10), *material, 10.0f);
-	dynamic->setAngularDamping(0.5f);
-	// dynamic->setLinearVelocity(PxVec3(0, -5, -10));
-	scene->addActor(*dynamic);
+	auto ball = PxCreateDynamic(*physics, PxTransform(PxVec3(0, 50, 0)), PxSphereGeometry(10), *material, 10.0f);
+	ball->setAngularDamping(0.5f);
+	ball->setLinearVelocity(PxVec3(0, -25, 0));
+	scene->addActor(*ball);
 }
 
 void World::step(float dt) {

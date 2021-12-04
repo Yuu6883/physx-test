@@ -10,7 +10,18 @@
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
-      "variables": []
+      "variables": [
+        {
+          "name": "VCPKG_INSTALLED_DIR",
+          "value": "D:/vcpkg/installed/",
+          "type": "PATH"
+        },
+        {
+          "name": "_VCPKG_INSTALLED_DIR",
+          "value": "D:/vcpkg/installed/",
+          "type": "PATH"
+        }
+      ]
     },
     {
       "name": "x64-Release",
@@ -37,7 +48,8 @@
       "variables": [
         {
           "name": "GUI",
-          "value": "true"
+          "value": "true",
+          "type": "STRING"
         }
       ]
     }

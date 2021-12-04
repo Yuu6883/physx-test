@@ -10,19 +10,54 @@
 #include <msquic.h>
 
 #include <string>
+#include <string_view>
 #include <stdlib.h>
+#include <list>
+#include <mutex>
+#include <atomic>
 
 using std::string;
+using std::list;
+using std::string_view;
+using std::mutex;
+using std::atomic;
 
 class QuicServer {
 	HQUIC listener;
+
 public:
-	static int init();
-	static void cleanup();
+	struct Connection {
+		QuicServer* server; // terrible design but no other way around ):
+		HQUIC conn;
+		HQUIC stream; // can be list of streams
+	};
+
+	struct RefCounter {
+		atomic<uint32_t> ref;
+		virtual ~RefCounter() {};
+	};
+
+	struct BroadcastReq : RefCounter {
+		uint32_t len;
+		QUIC_BUFFER* buffers;
+		bool freeAfterSend;
+		~BroadcastReq() {
+			if (freeAfterSend) delete[] buffers;
+			printf("Delete broadcast req\n");
+		}
+	};
+
+	mutex m; // Guards connections
+	list<Connection*> connections;
 
 	QuicServer() : listener(nullptr) {};
 	~QuicServer() { stop(); };
 
 	bool listen(uint16_t port);
 	bool stop();
+
+	void broadcast(string_view buffer, bool freeAfterSend);
+
+	static int init();
+	static void cleanup();
 };

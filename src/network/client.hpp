@@ -10,18 +10,33 @@
 #include <msquic.h>
 
 #include <string>
+#include <string_view>
 #include <stdlib.h>
 
 using std::string;
+using std::string_view;
+
 class QuicClient {
 	HQUIC conn;
 public:
+	struct SendReq {
+		uint32_t len;
+		QUIC_BUFFER* buffers;
+		bool freeAfterSend;
+		~SendReq() {
+			if (freeAfterSend) delete[] buffers;
+		}
+	};
+
+	HQUIC stream;
 	static int init(bool insecure);
 	static void cleanup();
 
-	QuicClient() : conn(nullptr) {};
+	QuicClient() : conn(nullptr), stream(nullptr) {};
 	~QuicClient() { disconnect(); };
 
 	bool connect(string host, uint16_t port);
 	bool disconnect();
+
+	bool send(string_view buffer, bool freeAfterSend);
 };
