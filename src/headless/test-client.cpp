@@ -1,4 +1,8 @@
-#include "../network/client.hpp"
+#include "../network/quic/client.hpp"
+#include <thread>
+#include <chrono>
+
+using namespace std::chrono;
 
 int main() {
 	auto error = QuicClient::init(true);

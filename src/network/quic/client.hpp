@@ -24,7 +24,10 @@ public:
 		QUIC_BUFFER* buffers;
 		bool freeAfterSend;
 		~SendReq() {
-			if (freeAfterSend) delete[] buffers;
+			if (freeAfterSend) {
+				for (uint32_t i = 0; i < len; i++) free(buffers[i].Buffer);
+			}
+			delete[] buffers;
 		}
 	};
 
@@ -39,4 +42,5 @@ public:
 	bool disconnect();
 
 	bool send(string_view buffer, bool freeAfterSend);
+	virtual void onData(string_view buffer) {};
 };

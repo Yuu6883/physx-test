@@ -27,7 +27,7 @@ QUIC_STATUS ClientStreamCallback(HQUIC stream, void* self, QUIC_STREAM_EVENT* Ev
             // A previous StreamSend call has completed, and the context is being
             // returned back to the app.
             delete static_cast<QuicClient::SendReq*>(Event->SEND_COMPLETE.ClientContext);
-            printf("[strm][%p] Data sent\n", stream);
+            // printf("[strm][%p] Data sent\n", stream);
             break;
         case QUIC_STREAM_EVENT_RECEIVE:
             // Data was received from the peer on the stream.

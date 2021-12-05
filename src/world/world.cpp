@@ -99,7 +99,7 @@ void World::initScene() {
 		shape->release();
 	*/
 
-	for (int stack = 0; stack < 20; stack++) {
+	for (int stack = 0; stack < 10; stack++) {
 		for (int i = -10; i <= 10; i++) {
 			for (int j = -10; j < 10; j++) {
 				auto dynamic = PxCreateDynamic(*physics, PxTransform(PxVec3(i , stack + 0.495f * 0.5f, j)), 
@@ -109,8 +109,6 @@ void World::initScene() {
 			}
 		}
 	}
-
-	
 
 	/*
 	auto panel = PxCreateDynamic(*physics, PxTransform(PxVec3(0.f, 20.f, 0.f)),
@@ -125,7 +123,11 @@ void World::initScene() {
 	scene->addActor(*ball);
 }
 
-void World::step(float dt) {
-	scene->simulate(1.f / 60);
+void World::step(float dt, bool blocking) {
+	scene->simulate(dt);
+	if (blocking) scene->fetchResults(true);
+}
+
+void World::syncSim() {
 	scene->fetchResults(true);
 }

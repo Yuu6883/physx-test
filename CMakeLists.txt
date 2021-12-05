@@ -26,17 +26,20 @@ endif()
 set(SRC_FILES
     "src/world/world.cpp"
     "src/viz/renderer.cpp"
+    "src/network/quic/server.cpp"
+    "src/network/game-server.cpp"
     "src/main.cpp"
 )
 
 set(SRC_HEADLESS_SERVER_FILES
     "src/world/world.cpp"
-    "src/network/server.cpp"
+    "src/network/quic/server.cpp"
+    "src/network/game-server.cpp"
     "src/headless/test-server.cpp"
 )
 
 set(SRC_TEST_CLIENT_FILES
-    "src/network/client.cpp"
+    "src/network/quic/client.cpp"
     "src/headless/test-client.cpp"
 )
 
@@ -74,10 +77,10 @@ if (WIN32)
         find_package(OpenGL REQUIRED)
         find_package(GLUT REQUIRED)
         add_executable(server ${SRC_FILES})
-        target_link_libraries(server ${PHYSX_LIBS} ${OPENGL_LIBRARIES} freeglut msquic)
+        target_link_libraries(server ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv freeglut msquic)
     else()
         add_executable(server ${SRC_HEADLESS_SERVER_FILES})
-        target_link_libraries(server ${PHYSX_LIBS} msquic)
+        target_link_libraries(server ${PHYSX_LIBS} libuv msquic)
     endif()
     
 else()
@@ -85,5 +88,5 @@ else()
     target_link_libraries("test-client" msquic)
 
     add_executable(server ${SRC_HEADLESS_SERVER_FILES})
-    target_link_libraries(server ${PHYSX_LIBS} msquic dl)
+    target_link_libraries(server ${PHYSX_LIBS} libuv msquic dl)
 endif()

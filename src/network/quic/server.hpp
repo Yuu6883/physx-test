@@ -23,13 +23,18 @@ using std::mutex;
 using std::atomic;
 
 class QuicServer {
-	HQUIC listener;
-
 public:
 	struct Connection {
 		QuicServer* server; // terrible design but no other way around ):
 		HQUIC conn;
 		HQUIC stream; // can be list of streams
+
+		virtual ~Connection() {};
+
+		virtual void onConnect() {};
+		virtual void onData(string_view buffer) {};
+		virtual void onDisconnect() {};
+		void send(string_view buffer, bool freeAfterSend);
 	};
 
 	struct RefCounter {
@@ -42,22 +47,41 @@ public:
 		QUIC_BUFFER* buffers;
 		bool freeAfterSend;
 		~BroadcastReq() {
-			if (freeAfterSend) delete[] buffers;
-			printf("Delete broadcast req\n");
+			if (freeAfterSend) {
+				for (uint32_t i = 0; i < len; i++) free(buffers[i].Buffer);
+			}
+			delete[] buffers;
 		}
 	};
 
-	mutex m; // Guards connections
-	list<Connection*> connections;
-
 	QuicServer() : listener(nullptr) {};
 	~QuicServer() { stop(); };
+
+	template<typename SyncCallback>
+	inline void sync(const SyncCallback& cb) {
+		m.lock();
+		cb(connections);
+		m.unlock();
+	}
+
+	size_t count() {
+		m.lock();
+		auto size = connections.size();
+		m.unlock();
+		return size;
+	}
 
 	bool listen(uint16_t port);
 	bool stop();
 
 	void broadcast(string_view buffer, bool freeAfterSend);
+	virtual Connection* client() { return new Connection(); };
 
 	static int init();
 	static void cleanup();
+
+private:
+	HQUIC listener;
+	mutex m; // Guards connections
+	list<Connection*> connections;
 };

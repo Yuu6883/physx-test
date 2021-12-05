@@ -22,7 +22,8 @@ public:
     ~World();
 
     void initScene();
-    void step(float dt);
+    void step(float dt, bool blocking = true);
+    void syncSim();
 
     PxScene* getScene() { return scene; };
 };

@@ -136,19 +136,6 @@ void Renderer::onRender() {
     stream << "FPS: " << std::fixed << std::setprecision(2) << fps;
     auto fpsStr = stream.str();
 
-	stream.str(std::string());
-	if (currentWorld) {
-		auto start = high_resolution_clock::now();
-		currentWorld->step(elapsedTime * 0.001f);
-		auto end = high_resolution_clock::now();
-
-		stream << "Tick: " << std::fixed << std::setprecision(2) << duration_cast<microseconds>(end - start).count() / 1000.f << " ms";
-	} else {
-		stream << "No world attached to renderer";
-	}
-
-	auto tickStr = stream.str();
-
 	// Setup GL
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glLoadIdentity();
@@ -168,7 +155,7 @@ void Renderer::onRender() {
 	ortho(windowW, windowH);
 	glColor3f(1, 1, 1);
 	renderString(10, 20, 0, GLUT_BITMAP_HELVETICA_12, fpsStr);
-	renderString(10, 40, 0, GLUT_BITMAP_HELVETICA_12, tickStr);
+	// renderString(10, 40, 0, GLUT_BITMAP_HELVETICA_12, tickStr);
 
 	perspective();
 
@@ -259,156 +246,16 @@ void Renderer::renderGrid(float size) {
 
 void Renderer::renderGeometry(const PxGeometryHolder& obj) {
 	switch (obj.getType()) {
-		case PxGeometryType::eBOX: {
+		case PxGeometryType::eBOX:
 			glScalef(obj.box().halfExtents.x, obj.box().halfExtents.y, obj.box().halfExtents.z);
 			glutSolidCube(2.0);
 			break;
-		}
-		case PxGeometryType::eSPHERE: {
+		case PxGeometryType::eSPHERE:
 			glutSolidSphere(GLdouble(obj.sphere().radius), 100, 100);
 			break;
-		}
-		case PxGeometryType::eCAPSULE: {
-
-			const PxF32 radius = obj.capsule().radius;
-			const PxF32 halfHeight = obj.capsule().halfHeight;
-
-			//Sphere
-			glPushMatrix();
-			glTranslatef(halfHeight, 0.0f, 0.0f);
-			glScalef(radius, radius, radius);
-			glutSolidSphere(1, 10, 10);
-			glPopMatrix();
-
-			// Sphere
-			glPushMatrix();
-			glTranslatef(-halfHeight, 0.0f, 0.0f);
-			glScalef(radius, radius, radius);
-			glutSolidSphere(1, 10, 10);
-			glPopMatrix();
-
-			// Cylinder
-			glPushMatrix();
-			glTranslatef(-halfHeight, 0.0f, 0.0f);
-			glScalef(2.0f * halfHeight, radius, radius);
-			glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
-			glEnableClientState(GL_VERTEX_ARRAY);
-			glEnableClientState(GL_NORMAL_ARRAY);
-			glVertexPointer(3, GL_FLOAT, 2 * 3 * sizeof(float), cylinderData);
-			glNormalPointer(GL_FLOAT, 2 * 3 * sizeof(float), cylinderData + 3);
-			glDrawArrays(GL_TRIANGLE_STRIP, 0, 13 * 2);
-			glDisableClientState(GL_VERTEX_ARRAY);
-			glDisableClientState(GL_NORMAL_ARRAY);
-			glPopMatrix();
-			break;
-		}
-		case PxGeometryType::eCONVEXMESH: {
-
-			// Compute triangles for each polygon.
-			const PxVec3 scale = obj.convexMesh().scale.scale;
-			PxConvexMesh* mesh = obj.convexMesh().convexMesh;
-			const PxU32 nbPolys = mesh->getNbPolygons();
-			const PxU8* polygons = mesh->getIndexBuffer();
-			const PxVec3* verts = mesh->getVertices();
-			PxU32 nbVerts = mesh->getNbVertices();
-			PX_UNUSED(nbVerts);
-
-			PxU32 numTotalTriangles = 0;
-			for (PxU32 i = 0; i < nbPolys; i++) {
-				PxHullPolygon data;
-				mesh->getPolygonData(i, data);
-
-				const PxU32 nbTris = PxU32(data.mNbVerts - 2);
-				const PxU8 vref0 = polygons[data.mIndexBase + 0];
-				PX_ASSERT(vref0 < nbVerts);
-				for (PxU32 j = 0; j < nbTris; j++) {
-					const PxU32 vref1 = polygons[data.mIndexBase + 0 + j + 1];
-					const PxU32 vref2 = polygons[data.mIndexBase + 0 + j + 2];
-
-					//generate face normal:
-					PxVec3 e0 = verts[vref1] - verts[vref0];
-					PxVec3 e1 = verts[vref2] - verts[vref0];
-
-					PX_ASSERT(vref1 < nbVerts);
-					PX_ASSERT(vref2 < nbVerts);
-
-					PxVec3 fnormal = e0.cross(e1);
-					fnormal.normalize();
-
-					if (numTotalTriangles * 6 < MAX_NUM_MESH_VEC3S)
-					{
-						vertexBuffer[numTotalTriangles * 6 + 0] = fnormal;
-						vertexBuffer[numTotalTriangles * 6 + 1] = verts[vref0];
-						vertexBuffer[numTotalTriangles * 6 + 2] = fnormal;
-						vertexBuffer[numTotalTriangles * 6 + 3] = verts[vref1];
-						vertexBuffer[numTotalTriangles * 6 + 4] = fnormal;
-						vertexBuffer[numTotalTriangles * 6 + 5] = verts[vref2];
-						numTotalTriangles++;
-					}
-				}
-			}
-			glPushMatrix();
-			glScalef(scale.x, scale.y, scale.z);
-			glEnableClientState(GL_NORMAL_ARRAY);
-			glEnableClientState(GL_VERTEX_ARRAY);
-			glNormalPointer(GL_FLOAT, 2 * 3 * sizeof(float), vertexBuffer);
-			glVertexPointer(3, GL_FLOAT, 2 * 3 * sizeof(float), vertexBuffer + 1);
-			glDrawArrays(GL_TRIANGLES, 0, int(numTotalTriangles * 3));
-			glPopMatrix();
-			break;
-		}
-		case PxGeometryType::eTRIANGLEMESH: {
-			const PxTriangleMeshGeometry& triGeom = obj.triangleMesh();
-			const PxTriangleMesh& mesh = *triGeom.triangleMesh;
-			const PxVec3 scale = triGeom.scale.scale;
-
-			const PxU32 triangleCount = mesh.getNbTriangles();
-			const PxU32 has16BitIndices = mesh.getTriangleMeshFlags() & PxTriangleMeshFlag::e16_BIT_INDICES;
-			const void* indexBuffer = mesh.getTriangles();
-
-			const PxVec3* verts = mesh.getVertices();
-
-			const PxU32* intIndices = reinterpret_cast<const PxU32*>(indexBuffer);
-			const PxU16* shortIndices = reinterpret_cast<const PxU16*>(indexBuffer);
-			PxU32 numTotalTriangles = 0;
-			for (PxU32 i = 0; i < triangleCount; ++i) {
-				PxVec3 triVert[3];
-
-				if (has16BitIndices) {
-					triVert[0] = verts[*shortIndices++];
-					triVert[1] = verts[*shortIndices++];
-					triVert[2] = verts[*shortIndices++];
-				} else {
-					triVert[0] = verts[*intIndices++];
-					triVert[1] = verts[*intIndices++];
-					triVert[2] = verts[*intIndices++];
-				}
-
-				PxVec3 fnormal = (triVert[1] - triVert[0]).cross(triVert[2] - triVert[0]);
-				fnormal.normalize();
-
-				if (numTotalTriangles * 6 < MAX_NUM_MESH_VEC3S) {
-					vertexBuffer[numTotalTriangles * 6 + 0] = fnormal;
-					vertexBuffer[numTotalTriangles * 6 + 1] = triVert[0];
-					vertexBuffer[numTotalTriangles * 6 + 2] = fnormal;
-					vertexBuffer[numTotalTriangles * 6 + 3] = triVert[1];
-					vertexBuffer[numTotalTriangles * 6 + 4] = fnormal;
-					vertexBuffer[numTotalTriangles * 6 + 5] = triVert[2];
-					numTotalTriangles++;
-				}
-			}
-			glPushMatrix();
-			glScalef(scale.x, scale.y, scale.z);
-			glEnableClientState(GL_NORMAL_ARRAY);
-			glEnableClientState(GL_VERTEX_ARRAY);
-			glNormalPointer(GL_FLOAT, 2 * 3 * sizeof(float), vertexBuffer);
-			glVertexPointer(3, GL_FLOAT, 2 * 3 * sizeof(float), vertexBuffer + 1);
-			glDrawArrays(GL_TRIANGLES, 0, int(numTotalTriangles * 3));
-			glDisableClientState(GL_VERTEX_ARRAY);
-			glDisableClientState(GL_NORMAL_ARRAY);
-			glPopMatrix();
-			break;
-		}
+		case PxGeometryType::eCAPSULE:
+		case PxGeometryType::eCONVEXMESH:
+		case PxGeometryType::eTRIANGLEMESH:
 		case PxGeometryType::eINVALID:
 		case PxGeometryType::eHEIGHTFIELD:
 		case PxGeometryType::eGEOMETRY_COUNT:

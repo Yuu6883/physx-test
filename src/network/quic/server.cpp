@@ -28,12 +28,13 @@ typedef struct QUIC_CREDENTIAL_CONFIG_HELPER {
 
 // Terrifying microsoft dev code
 
-QUIC_STATUS ServerStreamCallback(HQUIC stream, void* self, QUIC_STREAM_EVENT* Event) {
+QUIC_STATUS ServerStreamCallback(HQUIC stream, void* ptr, QUIC_STREAM_EVENT* Event) {
+    auto ctx = static_cast<QuicServer::Connection*>(ptr);
+
     switch (Event->Type) {
         case QUIC_STREAM_EVENT_SEND_COMPLETE: {
             // A previous StreamSend call has completed, and the context is being
             // returned back to the app.
-            printf("[strm][%p] Data sent\n", stream);
             auto req = static_cast<QuicServer::RefCounter*>(Event->SEND_COMPLETE.ClientContext);
             auto c = req->ref.load();
             while (!req->ref.compare_exchange_weak(c, c - 1)) c = req->ref.load();
@@ -42,15 +43,18 @@ QUIC_STATUS ServerStreamCallback(HQUIC stream, void* self, QUIC_STREAM_EVENT* Ev
         }
         case QUIC_STREAM_EVENT_RECEIVE:
             // Data was received from the peer on the stream.
-            printf("[strm][%p] Data received\n", stream);
+            for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
+                auto& buf = Event->RECEIVE.Buffers[i];
+                ctx->onData(string_view((char*) buf.Buffer, buf.Length));
+            }
             break;
         case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
-            // The peer gracefully shut down its send direction of the stream.
+            // The client gracefully shut down its send direction of the stream.
             printf("[strm][%p] Client stream shutdown\n", stream);
             // ServerSend(Stream);
             break;
         case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
-            // The peer aborted its send direction of the stream.
+            // The client aborted its send direction of the stream.
             printf("[strm][%p] Client stream aborted\n", stream);
             MsQuic->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
             break;
@@ -90,9 +94,8 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
                 break;
             }
 
-            ctx->server->m.lock();
-            ctx->server->connections.push_back(ctx);
-            ctx->server->m.unlock();
+            ctx->server->sync([&](auto& connections) { connections.push_back(ctx); });
+            ctx->onConnect();
 
             break;
         }
@@ -124,10 +127,8 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
 
             printf("[conn][%p] Client shutdown complete\n", conn);
 
-            
-            ctx->server->m.lock();
-            ctx->server->connections.remove(ctx);
-            ctx->server->m.unlock();
+            ctx->server->sync([&](auto& connections) { connections.remove(ctx); });
+            ctx->onDisconnect();
 
             delete ctx;
 
@@ -160,12 +161,18 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
 }
 
 QUIC_STATUS ServerListenerCallback(HQUIC listener, void* self, QUIC_LISTENER_EVENT* Event) {
+    auto server = static_cast<QuicServer*>(self);
     QUIC_STATUS status = QUIC_STATUS_NOT_SUPPORTED;
     switch (Event->Type) {
         case QUIC_LISTENER_EVENT_NEW_CONNECTION: {
             auto conn = Event->NEW_CONNECTION.Connection;
-            MsQuic->SetCallbackHandler(conn, (void*) ServerConnectionCallback, 
-                new QuicServer::Connection{ static_cast<QuicServer*>(self), conn, nullptr });
+
+            auto client = server->client();
+            client->conn = conn;
+            client->server = server;
+            client->stream = nullptr;
+
+            MsQuic->SetCallbackHandler(conn, (void*) ServerConnectionCallback, client);
             status = MsQuic->ConnectionSetConfiguration(Event->NEW_CONNECTION.Connection, Configuration);
             break;
         }
@@ -276,6 +283,20 @@ bool QuicServer::stop() {
 
         return true;
     } else return false;
+}
+
+void QuicServer::Connection::send(string_view buffer, bool freeAfterSend) {
+    auto buffers = new QUIC_BUFFER[1];
+    buffers[0].Buffer = (uint8_t*)buffer.data();
+    buffers[0].Length = buffer.size();
+    auto req = new BroadcastReq();
+    req->ref = 1;
+    req->len = 1;
+    req->buffers = buffers;
+    req->freeAfterSend = freeAfterSend;
+
+    auto status = MsQuic->StreamSend(stream, buffers, 1, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
+    if (QUIC_FAILED(status) && freeAfterSend) delete req;
 }
 
 void QuicServer::broadcast(string_view buffer, bool freeAfterSend) {
