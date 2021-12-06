@@ -12,7 +12,6 @@ using namespace physx;
 class World {
     PxDefaultCpuDispatcher* dispatcher;
     PxScene* scene;
-    PxPvdSceneClient* pvdClient;
     
 public:
     static int init();

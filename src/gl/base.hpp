@@ -1,15 +1,13 @@
 #pragma once
+#include <GL/freeglut.h>
 
-#include "../world/world.hpp"
 #include <string>
-#include <vector>
 
-using std::vector;
+using std::string;
 
-class Renderer {
+class BaseRenderer {
+    string name;
 
-    World* currentWorld;
-    
     int lastMouseX = 0;
     int lastMouseY = 0;
     float rotationX = 30.f;
@@ -31,22 +29,20 @@ class Renderer {
     void onResize(int w, int h);
     void onRender();
 
-    void setupRenderState();
+    void setupState();
 
     void ortho(int w, int h);
     void perspective();
 
-    void renderString(int x, int y, int space, void* font, std::string text);
+    void renderString(int x, int y, int space, void* font, string text);
     void renderAxes();
     void renderGrid(float size);
-    void renderGeometry(const PxGeometryHolder& obj);
-    void renderActors(const vector<PxRigidActor*>& actors, bool shadow = false, const PxVec3& color = PxVec3(0.75f, 0.75f, 0.75f));
-    void renderWorld();
 
     static void timer(int value, void* self);
 public:
-    Renderer(World* world);
-    ~Renderer();
+    BaseRenderer(string name = "Base Renderer");
+    virtual ~BaseRenderer();
 
-    void loop();
+    virtual void loop();
+    virtual void render() {};
 };

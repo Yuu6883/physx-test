@@ -1,17 +1,12 @@
-#include <GL/freeglut.h>
 #include <thread>
 
-#include "viz/renderer.hpp"
-#include "world/world.hpp"
-#include "network/game-server.hpp"
-#include "network/util/bitmagic.hpp"
-#include "misc/repl.hpp"
+#include "../misc/repl.hpp"
+#include "../server/game.hpp"
+#include "../server/debug/renderer.hpp"
 
 using std::thread;
 
 int main(int argc, char** argv) {
-    bitmagic::test();
-
     auto error = World::init();
     if (error) return error;
     error = QuicServer::init();
@@ -32,7 +27,7 @@ int main(int argc, char** argv) {
 
     auto t = new thread([&] {
         glutInit(&argc, argv);
-        auto renderer = new Renderer(server->world);
+        auto renderer = new ServerDebugRenderer(server->world);
         renderer->loop();
         std::raise(SIGINT);
     });

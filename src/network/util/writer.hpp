@@ -11,6 +11,8 @@ static thread_local std::unique_ptr<char[]> pool(new char[10 * 1024 * 1024]);
 class Writer {
     char* ptr;
 public:
+    size_t offset() { return ptr - pool.get(); };
+    
     Writer() : ptr(pool.get()) {};
     template<typename I>
     I& ref(I init = 0) {

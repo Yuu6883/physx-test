@@ -8,7 +8,7 @@
 #include <uv.h>
 
 #include "../world/world.hpp"
-#include "quic/server.hpp"
+#include "../network/quic/server.hpp"
 
 using std::map;
 using std::vector;
@@ -29,6 +29,11 @@ class PhysXServer : public QuicServer {
 
 	void broadcastState();
 
+	struct {
+		float query;
+		float compression;
+	} timing;
+
 	struct Handle : Connection {
 		struct CacheItem {
 			uint32_t flags;
@@ -36,6 +41,9 @@ class PhysXServer : public QuicServer {
 		};
 
 		map<PxRigidActor*, CacheItem> cache;
+
+		// Implemented in network/protocol/server-tick.cpp
+		virtual void onTick(unordered_set<PxRigidActor*>& actors);
 
 		virtual void onConnect();
 		virtual void onData(string_view buffer);

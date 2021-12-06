@@ -2,9 +2,11 @@
 
 #include <thread>
 #include <chrono>
-#include "../world/world.hpp"
-#include "../network/game-server.hpp"
+
 #include "../misc/repl.hpp"
+#include "../world/world.hpp"
+#include "../server/game.hpp"
+#include "../server/debug/renderer.hpp"
 
 int main() {
     auto error = World::init();

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10.0 FATAL_ERROR)
 
-project (physx-server CXX)
+project (physx-test CXX)
 
 if (WIN32)
     include_directories(${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/)
@@ -19,28 +19,39 @@ set(CMAKE_CXX_STANDARD 17)
 
 if (WIN32)
 else()
-    set(CMAKE_BUILD_TYPE RelWithDebInfo)
-    set(CMAKE_CXX_FLAGS "-pthread -march=znver2 -O3")
+    set(CMAKE_BUILD_TYPE Release)
+    # add_definitions(-D_DEBUG)
+    # set(CMAKE_BUILD_TYPE Debug)
+    set(CMAKE_CXX_FLAGS "-pthread -march=native -O3")
 endif()
 
-set(SRC_FILES
+set(SRC_SERVER_FILES
+    "src/gl/base.cpp"
     "src/world/world.cpp"
-    "src/viz/renderer.cpp"
     "src/network/quic/server.cpp"
-    "src/network/game-server.cpp"
-    "src/main.cpp"
+    "src/server/game.cpp"
+    "src/server/debug/renderer.cpp"
+    "src/network/protocol/server-tick.cpp"
+    "src/main/server-gui.cpp"
+)
+
+set(SRC_CLIENT_FILES
+    "src/network/quic/client.cpp"
+    "src/client/gui.cpp"
+    "src/main/client-gui.cpp"
 )
 
 set(SRC_HEADLESS_SERVER_FILES
     "src/world/world.cpp"
     "src/network/quic/server.cpp"
-    "src/network/game-server.cpp"
-    "src/headless/test-server.cpp"
+    "src/server/game.cpp"
+    "src/network/protocol/server-tick.cpp"
+    "src/main/server-headless.cpp"
 )
 
-set(SRC_TEST_CLIENT_FILES
+set(SRC_HEADLESS_CLIENT_FILES
     "src/network/quic/client.cpp"
-    "src/headless/test-client.cpp"
+    "src/main/client-headless.cpp"
 )
 
 if (WIN32)
@@ -65,28 +76,36 @@ else()
     )
 endif()
 
-
 if (WIN32)
+    set(OpenGL_GL_PREFERENCE LEGACY)
+    find_package(OpenGL REQUIRED)
+    find_package(GLUT REQUIRED)
     find_package(msquic CONFIG REQUIRED)
 
-    add_executable("test-client" ${SRC_TEST_CLIENT_FILES})
-    target_link_libraries("test-client" msquic)
+    add_compile_definitions(PHYSX_USE_CUDA)
 
-    if (DEFINED GUI)
-        set(OpenGL_GL_PREFERENCE LEGACY)
-        find_package(OpenGL REQUIRED)
-        find_package(GLUT REQUIRED)
-        add_executable(server ${SRC_FILES})
-        target_link_libraries(server ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv freeglut msquic)
-    else()
-        add_executable(server ${SRC_HEADLESS_SERVER_FILES})
-        target_link_libraries(server ${PHYSX_LIBS} libuv msquic)
-    endif()
+    add_executable("server-gui" ${SRC_SERVER_FILES})
+    target_link_libraries("server-gui" ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv freeglut msquic)
+        
+    add_executable("client-gui" ${SRC_CLIENT_FILES})
+    target_link_libraries("client-gui" ${OPENGL_LIBRARIES} libuv freeglut msquic)
+
+    add_executable("server-headless" ${SRC_HEADLESS_SERVER_FILES})
+    target_link_libraries("server-headless" ${PHYSX_LIBS} libuv msquic)
+        
+    add_executable("client-headless" ${SRC_HEADLESS_CLIENT_FILES})
+    target_link_libraries("client-headless" msquic libuv)
     
 else()
-    add_executable("test-client" ${SRC_TEST_CLIENT_FILES})
-    target_link_libraries("test-client" msquic)
+    # set(OpenGL_GL_PREFERENCE LEGACY)
+    # find_package(OpenGL REQUIRED)
+    # set(X_LIBS X11 Xi Xrandr Xxf86vm)
+    # add_executable("server-gui" ${SRC_SERVER_FILES})
+    # target_link_libraries("server-gui" ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv glut msquic dl)
 
-    add_executable(server ${SRC_HEADLESS_SERVER_FILES})
-    target_link_libraries(server ${PHYSX_LIBS} libuv msquic dl)
+    add_executable("server-headless" ${SRC_HEADLESS_SERVER_FILES})
+    target_link_libraries("server-headless" ${PHYSX_LIBS} libuv msquic dl)
+    
+    add_executable("client-headless" ${SRC_HEADLESS_CLIENT_FILES})
+    target_link_libraries("client-headless" libuv msquic)
 endif()

@@ -31,10 +31,8 @@ QUIC_STATUS ClientStreamCallback(HQUIC stream, void* self, QUIC_STREAM_EVENT* Ev
             break;
         case QUIC_STREAM_EVENT_RECEIVE:
             // Data was received from the peer on the stream.
-            printf("[strm][%p] Received %u buffers\n", stream, Event->RECEIVE.BufferCount);
             for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
-                auto& buf = Event->RECEIVE.Buffers[i];
-                printf("Buffers[%u] = %.*s\n", i, buf.Length, buf.Buffer);
+                client->onData(string_view((char*) Event->RECEIVE.Buffers[i].Buffer, Event->RECEIVE.Buffers[i].Length));
             }
             break;
         case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:

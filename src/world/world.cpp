@@ -5,8 +5,6 @@ static PxDefaultErrorCallback defaultErrorCallback;
 static PxDefaultAllocator defaultAllocatorCallback;
 
 static PxFoundation* foundation;
-static PxPvd* pvd;
-static PxPvdTransport* transport;
 static PxPhysics* physics;
 
 int World::init() {
@@ -20,14 +18,8 @@ int World::init() {
 
     bool recordMemoryAllocations = true;
 
-    pvd = PxCreatePvd(*foundation);
-    transport = PxDefaultPvdSocketTransportCreate("127.0.0.1", 5425, 100);
-    auto connected = pvd->connect(*transport, PxPvdInstrumentationFlag::eALL);
-
-	if (connected) printf("Connected to PVD\n");
-
     physics = PxCreatePhysics(PX_PHYSICS_VERSION, *foundation,
-        PxTolerancesScale(), recordMemoryAllocations, pvd);
+        PxTolerancesScale(), recordMemoryAllocations, nullptr);
 
     if (!physics) {
         printf("PxCreatePhysics failed!");
@@ -38,12 +30,7 @@ int World::init() {
 }
 
 void World::cleanup() {
-    
     physics->release();
-
-    pvd->release();
-    transport->release();
-
     foundation->release();
 }
 
@@ -58,15 +45,21 @@ World::World() {
 	dispatcher = PxDefaultCpuDispatcherCreate(t);
 	sceneDesc.cpuDispatcher = dispatcher;
 	sceneDesc.filterShader = PxDefaultSimulationFilterShader;
-	scene = physics->createScene(sceneDesc);
 
-    pvdClient = scene->getScenePvdClient();
+#ifdef PHYSX_USE_CUDA
+	PxCudaContextManagerDesc cudaContextManagerDesc;
 
-	if (pvdClient) {
-		pvdClient->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_CONSTRAINTS, true);
-		pvdClient->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_CONTACTS, true);
-		pvdClient->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_SCENEQUERIES, true);
+	auto cudaCtxManager = PxCreateCudaContextManager(*foundation, cudaContextManagerDesc, PxGetProfilerCallback());
+	if (cudaCtxManager) {
+		sceneDesc.cudaContextManager = cudaCtxManager;
+		sceneDesc.flags |= PxSceneFlag::eENABLE_GPU_DYNAMICS;
+		sceneDesc.broadPhaseType = PxBroadPhaseType::eGPU;
+	} else {
+		printf("Failed to create CUDA context\n");
 	}
+#endif
+
+	scene = physics->createScene(sceneDesc);
 }
 
 World::~World() {
