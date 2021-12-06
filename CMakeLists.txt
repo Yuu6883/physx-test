@@ -76,13 +76,13 @@ else()
     )
 endif()
 
+add_compile_definitions(PHYSX_USE_CUDA)
+
 if (WIN32)
     set(OpenGL_GL_PREFERENCE LEGACY)
     find_package(OpenGL REQUIRED)
     find_package(GLUT REQUIRED)
     find_package(msquic CONFIG REQUIRED)
-
-    add_compile_definitions(PHYSX_USE_CUDA)
 
     add_executable("server-gui" ${SRC_SERVER_FILES})
     target_link_libraries("server-gui" ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv freeglut msquic)
