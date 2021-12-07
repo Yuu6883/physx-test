@@ -32,7 +32,7 @@ QUIC_STATUS ClientStreamCallback(HQUIC stream, void* self, QUIC_STREAM_EVENT* Ev
         case QUIC_STREAM_EVENT_RECEIVE:
             // Data was received from the peer on the stream.
             for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
-                client->onData(string_view((char*) Event->RECEIVE.Buffers[i].Buffer, Event->RECEIVE.Buffers[i].Length));
+                client->recv(Event->RECEIVE.Buffers[i].Buffer, Event->RECEIVE.Buffers[i].Length);
             }
             break;
         case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
@@ -213,12 +213,11 @@ bool QuicClient::connect(string host, uint16_t port) {
     return true;
 }
 
-bool QuicClient::disconnect() {
+void QuicClient::disconnect() {
     if (conn) {
         MsQuic->ConnectionClose(conn);
         conn = nullptr;
-        return true;
-    } else return false;
+    };
 }
 
 bool QuicClient::send(string_view buffer, bool freeAfterSend) {

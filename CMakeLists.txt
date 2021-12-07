@@ -76,7 +76,7 @@ else()
     )
 endif()
 
-add_compile_definitions(PHYSX_USE_CUDA)
+# add_compile_definitions(PHYSX_USE_CUDA)
 
 if (WIN32)
     set(OpenGL_GL_PREFERENCE LEGACY)

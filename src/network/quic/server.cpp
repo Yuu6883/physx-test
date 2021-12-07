@@ -45,7 +45,7 @@ QUIC_STATUS ServerStreamCallback(HQUIC stream, void* ptr, QUIC_STREAM_EVENT* Eve
             // Data was received from the peer on the stream.
             for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
                 auto& buf = Event->RECEIVE.Buffers[i];
-                ctx->onData(string_view((char*) buf.Buffer, buf.Length));
+                ctx->recv(buf.Buffer, buf.Length);
             }
             break;
         case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
@@ -286,19 +286,36 @@ bool QuicServer::stop() {
 }
 
 void QuicServer::Connection::send(string_view buffer, bool freeAfterSend) {
-    auto buffers = new QUIC_BUFFER[1];
-    buffers[0].Buffer = (uint8_t*)buffer.data();
-    buffers[0].Length = buffer.size();
+    auto buffers = new QUIC_BUFFER[2];
+
+    // Length prefix buffer
+    buffers[0].Buffer = (uint8_t*) new uint64_t(buffer.size());
+    buffers[0].Length = sizeof(uint64_t);
+
+    buffers[1].Buffer = (uint8_t*) buffer.data();
+    buffers[1].Length = buffer.size();
+
     auto req = new BroadcastReq();
+
     req->ref = 1;
-    req->len = 1;
+    req->len = 2;
     req->buffers = buffers;
     req->freeAfterSend = freeAfterSend;
 
-    auto status = MsQuic->StreamSend(stream, buffers, 1, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
+    auto status = MsQuic->StreamSend(stream, buffers, 2, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
 
     printf("Sending %lu bytes to client\n", buffer.size());
     if (QUIC_FAILED(status)) delete req;
+}
+
+void QuicServer::Connection::disconnect() {
+    if (!stream && !conn) return;
+
+    MsQuic->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_GRACEFUL, 0);
+    MsQuic->ConnectionShutdown(conn, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+
+    stream = nullptr;
+    conn = nullptr;
 }
 
 void QuicServer::broadcast(string_view buffer, bool freeAfterSend) {
@@ -309,21 +326,28 @@ void QuicServer::broadcast(string_view buffer, bool freeAfterSend) {
         return;
     }
 
-    auto buffers = new QUIC_BUFFER[1];
-    buffers[0].Buffer = (uint8_t*)buffer.data();
-    buffers[0].Length = buffer.size();
+    auto buffers = new QUIC_BUFFER[2];
+
+    // Length prefix buffer
+    buffers[0].Buffer = (uint8_t*) new uint64_t(buffer.size());
+    buffers[0].Length = sizeof(uint64_t);
+
+    buffers[1].Buffer = (uint8_t*) buffer.data();
+    buffers[1].Length = buffer.size();
+
     auto req = new BroadcastReq();
     req->ref = (uint32_t) connections.size();
-    req->len = 1;
+    req->len = 2;
     req->buffers = buffers;
     req->freeAfterSend = freeAfterSend;
 
     for (auto ctx : connections) {
-        auto status = MsQuic->StreamSend(ctx->stream, buffers, 1, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
-        if (QUIC_FAILED(status)) req->ref--;
+        auto status = MsQuic->StreamSend(ctx->stream, buffers, 2, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
+        if (QUIC_FAILED(status)) {
+            req->ref--;
+            printf("Failed to send???\n");
+        }
     }
-
-    if (!req->ref) delete req;
 
     m.unlock();
 }

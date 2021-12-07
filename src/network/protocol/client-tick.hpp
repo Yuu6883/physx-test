@@ -23,12 +23,6 @@ void BaseClient<T>::onData(string_view buffer) {
 
 	int64_t remote_now = r.read<int64_t>();
 
-	if (error) {
-		// printf("Protocol deserilize error\n");
-	} else {
-		if (dt > 100) {
-			int64_t local = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-			printf("%lu bytes | ping %li ms\n", buffer.size(), local - remote_now);
-		}
-	}
+	int64_t local = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+	printf("%lu bytes | ping %li ms\n", buffer.size(), local - remote_now);
 }

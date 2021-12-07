@@ -10,13 +10,13 @@
 #include <msquic.h>
 
 #include <string>
-#include <string_view>
 #include <stdlib.h>
 
-using std::string;
-using std::string_view;
+#include "message.hpp"
 
-class QuicClient {
+using std::string;
+
+class QuicClient : public LengthPrefix {
 	HQUIC conn;
 public:
 	struct SendReq {
@@ -35,12 +35,15 @@ public:
 	static int init(bool insecure);
 	static void cleanup();
 
-	QuicClient() : conn(nullptr), stream(nullptr) {};
+	QuicClient() : LengthPrefix(1024 * 1024), conn(nullptr), stream(nullptr) {};
+
 	~QuicClient() { disconnect(); };
 
 	bool connect(string host, uint16_t port);
-	bool disconnect();
+	void disconnect();
 
 	bool send(string_view buffer, bool freeAfterSend);
+
+	virtual void onError() {};
 	virtual void onData(string_view buffer) {};
 };
