@@ -8,6 +8,7 @@ int main() {
 
 	client->connect("localhost", 6969);
 
+	// connect is not blocking
 	getchar();
 	delete client;
 

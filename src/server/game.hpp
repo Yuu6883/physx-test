@@ -10,7 +10,6 @@
 #include "../world/world.hpp"
 #include "../network/quic/server.hpp"
 
-using std::map;
 using std::vector;
 using std::unordered_set;
 using namespace std::chrono;
@@ -36,11 +35,15 @@ class PhysXServer : public QuicServer {
 
 	struct Handle : Connection {
 		struct CacheItem {
+			PxRigidActor* obj;
 			uint32_t flags;
 			PxVec3 pos;
 		};
 
-		map<PxRigidActor*, CacheItem> cache;
+		vector<CacheItem> cache;
+		unordered_set<PxRigidActor*> cache_set;
+
+		static const size_t cache_size = sizeof(CacheItem);
 
 		// Implemented in network/protocol/server-tick.cpp
 		virtual void onTick(unordered_set<PxRigidActor*>& actors);

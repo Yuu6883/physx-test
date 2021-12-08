@@ -304,7 +304,7 @@ void QuicServer::Connection::send(string_view buffer, bool freeAfterSend) {
 
     auto status = MsQuic->StreamSend(stream, buffers, 2, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
 
-    printf("Sending %lu bytes to client\n", buffer.size());
+    // printf("Sending %lu bytes to client\n", buffer.size());
     if (QUIC_FAILED(status)) delete req;
 }
 

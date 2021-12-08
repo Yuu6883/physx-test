@@ -45,7 +45,7 @@ public:
             ptr += sizeof(T);
             return t;
         }
-        return 0;
+        return T{ 0 };
     }
 
     template<typename I>

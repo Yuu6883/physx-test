@@ -68,7 +68,7 @@ World::~World() {
 }
 
 void World::initScene() {
-    auto material = physics->createMaterial(0.5f, 0.5f, 0.25f);
+    auto material = physics->createMaterial(0.5f, 0.5f, 0.1f);
     
 	auto ground = PxCreatePlane(*physics, PxPlane(0, 1, 0, 0), *material);
 	scene->addActor(*ground);
@@ -92,13 +92,14 @@ void World::initScene() {
 		shape->release();
 	*/
 
+
 	for (int stack = 0; stack < 10; stack++) {
 		for (int i = -10; i <= 10; i++) {
-			for (int j = -10; j < 10; j++) {
-				auto dynamic = PxCreateDynamic(*physics, PxTransform(PxVec3(i , stack + 0.495f * 0.5f, j)), 
-					PxBoxGeometry(0.495f, 0.495f, 0.495f), *material, 10.0f);
-				dynamic->setAngularDamping(0.2f);
-				scene->addActor(*dynamic);
+			for (int j = -10; j <= 10; j++) {
+				auto box = PxCreateDynamic(*physics, PxTransform(PxVec3(i, stack + 0.49f * 0.5f, j)),
+					PxBoxGeometry(0.49f, 0.49f, 0.49f), *material, 5.0f);
+				box->setAngularDamping(0.2f);
+				scene->addActor(*box);
 			}
 		}
 	}
@@ -112,12 +113,13 @@ void World::initScene() {
 	// Destroyer ball
 	auto ball = PxCreateDynamic(*physics, PxTransform(PxVec3(0, 50, 0)), PxSphereGeometry(10), *material, 10.0f);
 	ball->setAngularDamping(0.5f);
-	ball->setLinearVelocity(PxVec3(0, -25, 0));
 	scene->addActor(*ball);
+
+	// ball->setLinearVelocity(PxVec3(0, -25, 0));
 }
 
 void World::step(float dt, bool blocking) {
-	scene->simulate(dt);
+	scene->simulate(1 / 60.f); // ???
 	if (blocking) scene->fetchResults(true);
 }
 

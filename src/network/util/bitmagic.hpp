@@ -92,7 +92,7 @@ namespace bitmagic {
 	}
 
 	constexpr uint32_t c = (1 << 9) - 1;
-	constexpr float m_encode = c * 1.41421356237309504880;
+	constexpr float m_encode = c * 1.41421356237309504880f;
 	constexpr float m_decode = 1.f / m_encode;
 
 	static inline uint32_t quat_sm3_encode(const PxQuat& q) {
@@ -110,31 +110,20 @@ namespace bitmagic {
 		}
 
 		uint32_t out = index << 30;
-		bool s = ptr[index] > 0;
+		bool s = ptr[index] <= 0;
 
 #define sign_bits(n1, n2, n3) (((n1 < 0) << 29) | ((n2 < 0) << 19) | ((n3 < 0) << 9))
 #define truc(f) (uint32_t(roundf(m_encode * fabsf(f))) & c)
 #define value_bits(n1, n2, n3) ((truc(n1) << 20) | (truc(n2) << 10) | truc(n3))
 #define pack(n1, n2, n3) (sign_bits(n1, n2, n3) | value_bits(n1, n2, n3))
 
-		// Is branchless faster hmm
-		/*
 		float n1 = index == 0 ? q.y : q.x;
 		float n2 = index <= 1 ? q.z : q.y;
 		float n3 = index <= 2 ? q.w : q.z;
-		return out | pack(n1, n2, n3);
-		*/
-
-		if (index == 0) {
-			return out | pack(q.y, q.z, q.w);
-		} else if (index == 1) {
-			return out | pack(q.x, q.z, q.w);
-		} else if (index == 2) {
-			return out | pack(q.x, q.y, q.w);
-		} else {
-			return out | pack(q.x, q.y, q.z);
-		}
-
+		
+		// return (out | pack(n1, n2, n3));
+		return s ? (out | pack(-n1, -n2, -n3)) : (out | pack(n1, n2, n3));
+	
 #undef sign_bits
 #undef truc
 #undef value_bits
@@ -142,7 +131,7 @@ namespace bitmagic {
 
 	}
 
-	static inline void quat_sm3_decode(uint32_t& value, PxQuat& q) {
+	static inline void quat_sm3_decode(PxQuat& q, const uint32_t& value) {
 		uint32_t index = value >> 30;
 
 		float sum = 0;
@@ -151,7 +140,7 @@ namespace bitmagic {
 		// Hopefully unrolled
 		for (int i = 0; i < 3; i++) {
 			t[2 - i] = ((value >> (i * 10)) & c) * m_decode;
-			t[2 - i] *= (value & (1 << (i * 10 - 1))) ? -1 : 1;
+			t[2 - i] *= (value & (1 << (i * 10 + 9))) ? -1 : 1;
 			sum += (t[2 - i] * t[2 - i]);
 		}
 
@@ -179,7 +168,7 @@ namespace bitmagic {
 		std::random_device rd;
 		std::mt19937 gen(rd());
 		std::uniform_real_distribution<float> dist(-1, 1);
-		gen.seed(0);
+		// gen.seed(0);
 
 		// fixed point uint16_t  test
 		/*
@@ -192,9 +181,8 @@ namespace bitmagic {
 		*/
 
 		// Quat uint32_t test
-		/*
 
-		constexpr size_t TEST_SIZE = 10000;
+		constexpr size_t TEST_SIZE = 100;
 		PxQuat* arr = new PxQuat[TEST_SIZE];
 
 		for (int t = 0; t < 10; t++) {
@@ -211,12 +199,13 @@ namespace bitmagic {
 			auto start = high_resolution_clock::now();
 
 			for (int i = 0; i < TEST_SIZE; i++) {
-				uint32_t encode = quat_sm3_encode(arr[i]);
-				// PxQuat o;
-				// quat_sm3_decode(encode, o);
+				auto& q = arr[i];
+				uint32_t encode = quat_sm3_encode(q);
+				PxQuat o;
+				quat_sm3_decode(o, encode);
 
-				// printf("In: %+.8f, %+.8f, %+.8f, %+.8f | out: %+.8f, %+.8f, %+.8f, %+.8f\n", 
-				//	q.x, q.y, q.z, q.w, o.x, o.y, o.z, o.w);
+				printf("In: %+.8f, %+.8f, %+.8f, %+.8f | out: %+.8f, %+.8f, %+.8f, %+.8f\n", 
+					q.x, q.y, q.z, q.w, o.x, o.y, o.z, o.w);
 			}
 
 			auto dt = high_resolution_clock::now() - start;
@@ -224,7 +213,6 @@ namespace bitmagic {
 		}
 
 		delete[] arr;
-		*/
 
 		// Delta uint8_t test
 		/*

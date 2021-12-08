@@ -17,7 +17,7 @@ public:
     template<typename I>
     I& ref(I init = 0) {
         I& r = *((I*)ptr);
-        r = 0;
+        r = init;
         ptr += sizeof(I);
         return r;
     }

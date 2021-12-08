@@ -90,9 +90,9 @@ QUIC_STATUS ClientConnectionCallback(HQUIC conn, void* self, QUIC_CONNECTION_EVE
             // A resumption ticket (also called New Session Ticket or NST) was
             // received from the server.
             printf("[conn][%p] Resumption ticket received (%u bytes):\n", conn, Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
-            for (uint32_t i = 0; i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength; i++) {
-                printf("%.2X", (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
-            }
+            // for (uint32_t i = 0; i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength; i++) {
+            //    printf("%.2X", (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
+            // }
             printf("\n");
             break;
         case QUIC_CONNECTION_EVENT_STREAMS_AVAILABLE:
@@ -214,10 +214,11 @@ bool QuicClient::connect(string host, uint16_t port) {
 }
 
 void QuicClient::disconnect() {
-    if (conn) {
-        MsQuic->ConnectionClose(conn);
-        conn = nullptr;
+    if (stream) {
+        MsQuic->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_GRACEFUL, 0);
+        stream = nullptr;
     };
+    // TODO: what to do to the connection
 }
 
 bool QuicClient::send(string_view buffer, bool freeAfterSend) {

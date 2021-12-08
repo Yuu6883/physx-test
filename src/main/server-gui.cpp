@@ -3,6 +3,7 @@
 #include "../misc/repl.hpp"
 #include "../server/game.hpp"
 #include "../server/debug/renderer.hpp"
+#include "../network/util/bitmagic.hpp"
 
 using std::thread;
 

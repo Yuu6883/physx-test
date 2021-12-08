@@ -16,7 +16,7 @@ class BaseRenderer {
     int startTime = 0;
     int totalFrames = 0;
     int state = 1;
-    float dist = -40;
+    float dist = -100;
 
     int windowW;
     int windowH;
@@ -44,5 +44,5 @@ public:
     virtual ~BaseRenderer();
 
     virtual void loop();
-    virtual void render() {};
+    virtual void render() = 0;
 };

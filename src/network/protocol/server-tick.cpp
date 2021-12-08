@@ -7,9 +7,7 @@
 using namespace bitmagic;
 
 void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
-	static thread_local vector<PxRigidActor*> toRemove;
 
-	toRemove.resize(0);
 	Writer w;
 
 	w.write<uint8_t>(PROTO_VER[0]);
@@ -19,20 +17,36 @@ void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
 	int64_t timestamp = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 	w.write<int64_t>(timestamp);
 
-	w.write<uint32_t>(cache.size());
+	uint32_t cacheSize = cache.size();
+
+	w.write<uint32_t>(cacheSize);
 
 	PxShape* shape = nullptr;
-	for (auto& [obj, entry] : cache) {
-		auto& prevFlags = entry.flags;
-		auto& prevPos = entry.pos;
 
-		if (curr.find(obj) == curr.end()) {
+	uint32_t write_id = 0;
+	for (uint32_t i = 0; i < cacheSize; i++) {
+		auto entry = &cache[i];
+
+		if (write_id < i) {
+			cache[write_id] = cache[i]; // copy
+			entry = &cache[write_id];
+		}
+
+		auto& prevFlags = entry->flags;
+		auto& prevPos = entry->pos;
+
+		if (curr.find(entry->obj) == curr.end()) {
 			// remove
-			toRemove.push_back(obj);
 			w.write<uint8_t>(UPD_STATE | OBJ_REMOVE);
+			cache_set.erase(entry->obj);
 		} else {
+			write_id++; // Keep current cache in the array
+
+			auto obj = entry->obj;
+
 			// skip static object
 			if (obj->is<PxRigidStatic>()) continue;
+
 			uint32_t newFlags = 0;
 			if (obj->is<PxRigidDynamic>() &&
 				obj->is<PxRigidDynamic>()->isSleeping()) newFlags |= OBJ_SLEEP;
@@ -49,10 +63,8 @@ void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
 				if (newFlags & OBJ_SLEEP) {
 					// Loseless encode and cache update
 					w.write<uint8_t>(UPD_STATE | OBJ_SLEEP);
-					w.write<float>(currPos.x);
-					w.write<float>(currPos.y);
-					w.write<float>(currPos.z);
-					w.write<uint32_t>(quat_sm3_encode(t.q));
+					w.write<PxVec3>(currPos);
+					w.write<PxQuat>(t.q);
 					prevPos = currPos;
 				} else {
 					// Obj wake up ((no flags but no OBJ_SLEEP indicate wake up
@@ -62,27 +74,34 @@ void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
 				}
 				// sleep state did not update
 			} else {
-				// currently sleeping, skip
+				// currently sleeping, only write sleep state
 				if (newFlags & OBJ_SLEEP) {
-					continue;
+					w.write<uint8_t>(UPD_STATE | OBJ_SLEEP);
 				} else {
 					// normal update
+					auto& header = w.ref<uint8_t>(UPD_OBJ);
+
 					auto t = obj->getGlobalPose();
 					const auto& currPos = t.p;
-					vec3_24_delta_encode(prevPos, currPos, w.ref<uint8_t>(UPD_OBJ), w.ref<uint8_t>(), w.ref<uint8_t>(), w.ref<uint8_t>());
+					auto& x = w.ref<uint8_t>();
+					auto& y = w.ref<uint8_t>();
+					auto& z = w.ref<uint8_t>();
+					vec3_24_delta_encode(prevPos, currPos, header, x, y, z);
 					w.write<uint32_t>(quat_sm3_encode(t.q));
+
+					// printf("encoded: %u, %u, %u\n", x, y, z);
+					// printf("cache [%.4f,%.4f,%.4f]\n", prevPos.x, prevPos.y, prevPos.z);
 				}
 			}
 		}
 	}
 
-	constexpr uint8_t BOX_T = 1;
-	constexpr uint8_t SPH_T = 2;
-	constexpr uint8_t PLN_T = 3;
-	constexpr uint8_t UNK_T = 63;
+	cache.resize(write_id);
+
+	auto& adding = w.ref<uint32_t>();
 
 	for (auto obj : curr) {
-		if (cache.find(obj) != cache.end()) continue;
+		if (cache_set.find(obj) != cache_set.end()) continue;
 		if (obj->getShapes(&shape, 1) != 1) continue;
 
 		uint8_t headerInit = ADD_OBJ_DY;
@@ -94,35 +113,35 @@ void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
 
 		auto geo = shape->getGeometry();
 		auto type = geo.getType();
-		auto t = obj->getGlobalPose();
+		const auto t = obj->getGlobalPose();
 
 		PxVec3 toCache;
-		vec3_48_encode_wb(t.p, toCache, w.ref<uint16_t>(), w.ref<uint16_t>(), w.ref<uint16_t>());
+		vec3_48_encode_wb(toCache, t.p, w.ref<uint16_t>(), w.ref<uint16_t>(), w.ref<uint16_t>());
 		w.write<uint32_t>(quat_sm3_encode(t.q));
 
 		if (type == PxGeometryType::eBOX) {
 			header |= BOX_T;
-			auto& box = geo.box();
-			w.write<float>(box.halfExtents.x);
-			w.write<float>(box.halfExtents.y);
-			w.write<float>(box.halfExtents.z);
-		} else if (type == PxGeometryType::ePLANE) {
-			header |= PLN_T;
-			// nothing
+			w.write<PxVec3>(geo.box().halfExtents);
 		} else if (type == PxGeometryType::eSPHERE) {
 			header |= SPH_T;
 			w.write<float>(geo.sphere().radius);
+		} else if (type == PxGeometryType::ePLANE) {
+			header |= PLN_T;
+			// nothing
 		} else {
 			header |= UNK_T;
 			// TODO: implement more shapes
-			continue;
+			printf("Unknown shape\n");
 		}
 
 		// Add to cache
-		cache.insert({ obj, { 0, toCache } });
+		cache.push_back({ obj, 0, toCache });
+		cache_set.insert(obj);
+
+		adding++;
 	}
 
-	for (auto obj : toRemove) cache.erase(obj);
+	w.write<uint32_t>(cache.size());
 	auto buf = w.finalize();
 
 	// printf("Buffer size: %u\n", buf.size());

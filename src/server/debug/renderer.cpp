@@ -54,26 +54,6 @@ void ServerDebugRenderer::renderActors(const vector<PxRigidActor*>& actors, bool
 				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 			}
 
-			if (h.getType() == PxGeometryType::eSPHERE) {
-
-				auto t = actor->is<PxRigidDynamic>()->getGlobalPose();
-
-				// Smallest three ???
-
-				uint8_t index = 0;
-				float ab[4] = { fabsf(t.q.x), fabsf(t.q.y), fabsf(t.q.z), fabsf(t.q.w) };
-
-				float max = ab[0];
-				for (uint8_t i = 1; i < 4; i++) {
-					if (ab[i] > max) {
-						max = ab[i];
-						index = i;
-					}
-				}
-
-				// printf("%.5f, %.5f, %.5f, %.5f, max_index = %u\n", t.q.x, t.q.y, t.q.z, t.q.w, index);
-			}
-
 			// Render object
 			glPushMatrix();
 			glMultMatrixf(reinterpret_cast<const float*>(&shapePose));

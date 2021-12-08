@@ -2,42 +2,75 @@
 
 #include <mutex>
 #include <vector>
-#include <PxPhysics.h>
 
+#include <PxPhysics.h>
+#include <PxPhysicsAPI.h>
+
+#include "../network/protocol/common.hpp"
+#include "../network/util/reader.hpp"
 #include "../network/quic/client.hpp"
 
 using std::mutex;
 using std::vector;
 using namespace physx;
 
-template<typename T = void>
 class BaseClient : public QuicClient {
 	// Implemented in network/protocol/client-tick.cpp
 	void onData(string_view buffer);
 
 	uint64_t last_packet;
 	mutex m;
+
+protected:
+	class NetworkedObject;
+private:
+	struct NetworkData {
+		uint16_t type;
+		uint16_t state;
+		uint16_t flags;
+		PxVec3 pos;
+		PxQuat quat;
+		NetworkedObject* ctx;
+	};
+
+	static const size_t client_data_size = sizeof(BaseClient::NetworkData);
+
+protected:
+	class NetworkedObject {
+		friend BaseClient;
+	protected:
+		virtual ~NetworkedObject() {};
+		virtual void onWake() {};
+		virtual void onSleep() {};
+		virtual void onAdd(const PxVec3& pos, const PxQuat& quat) {};
+		virtual void onUpdate(const PxVec3& pos, const PxQuat& quat) {};
+		virtual void onRemove() {};
+	};
+private:
+	// Compact data array
+	vector<NetworkData> data;
 public:
 	template<typename SyncCallback>
 	inline void sync(const SyncCallback& cb) {
 		m.lock();
-		cb();
+		for (auto& d : data) cb(d.ctx);
 		m.unlock();
 	}
 
-	struct NetworkedObject {
-		uint32_t flags;
-		PxVec3 prevPos;
-		PxVec3 currPos;
-		PxQuat prevQuat;
-		PxQuat currQuat;
-		T* ctx;
-	};
+	// Override this function
+	virtual NetworkedObject* addObj(uint16_t type, uint16_t state, uint16_t flags, Reader& r) {
+		if (type == BOX_T) {
+			auto halfExtents = r.read<PxVec3>();
+		} else if (type == SPH_T) {
+			auto radius = r.read<float>();
+		} else if (type == PLN_T) {
+			// 
+		} else {
+			printf("Unknown network data type: %u\n", type);
+		}
 
-	// Compact object array
-	vector<NetworkedObject> objects;
+		return nullptr;
+	}
+
+	uint64_t lastPacketTime() { return last_packet; }
 };
-
-constexpr size_t obj_size = sizeof(BaseClient<>::NetworkedObject);
-
-#include "../network/protocol/client-tick.hpp"

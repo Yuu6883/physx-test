@@ -36,7 +36,9 @@ set(SRC_SERVER_FILES
 )
 
 set(SRC_CLIENT_FILES
+    "src/gl/base.cpp"
     "src/network/quic/client.cpp"
+    "src/network/protocol/client-tick.cpp"
     "src/client/gui.cpp"
     "src/main/client-gui.cpp"
 )
@@ -51,6 +53,7 @@ set(SRC_HEADLESS_SERVER_FILES
 
 set(SRC_HEADLESS_CLIENT_FILES
     "src/network/quic/client.cpp"
+    "src/network/protocol/client-tick.cpp"
     "src/main/client-headless.cpp"
 )
 
