@@ -111,11 +111,11 @@ void World::initScene() {
 	*/
 
 	// Destroyer ball
-	auto ball = PxCreateDynamic(*physics, PxTransform(PxVec3(0, 50, 0)), PxSphereGeometry(10), *material, 10.0f);
+	auto ball = PxCreateDynamic(*physics, PxTransform(PxVec3(0, 25, 0)), PxSphereGeometry(10), *material, 10.0f);
 	ball->setAngularDamping(0.5f);
-	scene->addActor(*ball);
 
-	// ball->setLinearVelocity(PxVec3(0, -25, 0));
+	ball->setLinearVelocity(PxVec3(0, 25, 0));
+	scene->addActor(*ball);
 }
 
 void World::step(float dt, bool blocking) {

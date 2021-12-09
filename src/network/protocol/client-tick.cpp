@@ -44,6 +44,8 @@ void BaseClient::onData(string_view buffer) {
 	// Deserialize lock
 	m.lock();
 
+	// auto start = uv_hrtime(); // around 0.3ms for 4k objects
+
 	// Update object loop -> update flags, position, and quaternion
 	uint32_t write_id = 0;
 	for (uint32_t i = 0; i < cacheSize; i++) {
@@ -168,4 +170,10 @@ void BaseClient::onData(string_view buffer) {
 
 	// Done writing to data array
 	m.unlock();
+
+	/*
+		auto end = uv_hrtime();
+		auto d = (end - start) / 1000000.f;
+		printf("Deserialize time: %.5f\n", d);
+	*/
 }

@@ -3,8 +3,6 @@
 #include "base.hpp"
 #include "../gl/base.hpp"
 
-static inline float fselect(float c, float f1, float f2) { return c >= 0 ? f1 : f2; };
-
 class GUIClient : public BaseClient, public BaseRenderer {
 	class RenderableObject : public NetworkedObject {
 		bool sleeping = false;
@@ -35,7 +33,6 @@ class GUIClient : public BaseClient, public BaseRenderer {
 			netPos = pos;
 			prevQuat = currQuat;
 			netQuat = quat;
-
 
 			// printf("update pos: [%.4f,%.4f,%.4f]\n", pos.x, pos.y, pos.z);
 		};

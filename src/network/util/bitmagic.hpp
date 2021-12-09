@@ -182,6 +182,7 @@ namespace bitmagic {
 
 		// Quat uint32_t test
 
+		/*
 		constexpr size_t TEST_SIZE = 100;
 		PxQuat* arr = new PxQuat[TEST_SIZE];
 
@@ -213,6 +214,7 @@ namespace bitmagic {
 		}
 
 		delete[] arr;
+		*/
 
 		// Delta uint8_t test
 		/*
