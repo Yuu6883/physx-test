@@ -94,7 +94,7 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
                 break;
             }
 
-            ctx->server->sync([&](auto& connections) { connections.push_back(ctx); });
+            ctx->server->sync([&] { ctx->server->connections.push_back(ctx); });
             ctx->onConnect();
 
             break;
@@ -127,7 +127,7 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
 
             printf("[conn][%p] Client shutdown complete\n", conn);
 
-            ctx->server->sync([&](auto& connections) { connections.remove(ctx); });
+            ctx->server->sync([&] { ctx->server->connections.remove(ctx); });
             ctx->onDisconnect();
 
             delete ctx;

@@ -54,16 +54,20 @@ void PhysXServer::tick(uint64_t now, float realDelay) {
 	if (world) {
 		if (!count()) return;
 
+		float delaySec = realDelay * 0.001f;
+		syncPerConn([delaySec](auto& conn) {
+			static_cast<Handle*>(conn)->move(delaySec);
+		});
+
 		world->step(tickIntervalNano / 1000000000.f, false);
 
 		if (now > last_net + netIntervalNano) {
-			last_net = now;
+			last_net = last_net + netIntervalNano;
 			broadcastState();
 		}
 
 		world->syncSim();
 	}
-	// printf("Real delay = %.2f\n", realDelay);
 }
 
 void PhysXServer::broadcastState() {
@@ -86,10 +90,8 @@ void PhysXServer::broadcastState() {
 	auto dt = high_resolution_clock::now() - start;
 	timing.query = duration<float, std::milli>(dt).count();
 
-	sync([&] (auto& connections) {
-		for (auto conn : connections) {
-			static_cast<Handle*>(conn)->onTick(curr);
-		}
+	syncPerConn([&] (auto& conn) {
+		static_cast<Handle*>(conn)->onTick(curr);
 	});
 
 	dt = high_resolution_clock::now() - start;
@@ -97,14 +99,39 @@ void PhysXServer::broadcastState() {
 
 	// printf("Query      : %4.4fms\n", timing.query);
 	// printf("Compression: %4.4fms\n", timing.compression);
+	printf("Num Actors : %u\n", nbActors);
 }
 
 void PhysXServer::Handle::onConnect() {
-
-}
-
-void PhysXServer::Handle::onData(string_view buffer) {
+	auto server = getServer();
+	server->sync([&] {
+		server->world->spawn(this);
+	});
 }
 
 void PhysXServer::Handle::onDisconnect() {
+	auto server = getServer();
+	server->sync([&] {
+		ct->release();
+		ct = nullptr;
+	});
+}
+
+static const PxControllerFilters ctFilters;
+
+void PhysXServer::Handle::move(float dt) {
+	if (!ct) return;
+
+	PlayerInput input;
+
+	{
+		std::scoped_lock lock(input_mutex);
+		input = this->input;
+	}
+
+	PxVec3 dir(input.target.x, input.target.y, 0);
+	auto len = dir.normalize();
+
+	if (len <= 0) return;
+	auto flags = ct->move(dir, 0.001f, dt, ctFilters);
 }

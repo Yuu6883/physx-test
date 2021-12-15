@@ -1,11 +1,14 @@
 #pragma once
 
-
 #include <map>
 #include <vector>
 #include <chrono>
 #include <unordered_set>
 #include <uv.h>
+
+#include <PxPhysicsAPI.h>
+#include <PxPhysicsVersion.h>
+#include <PxPhysics.h>
 
 #include "../world/world.hpp"
 #include "../network/quic/server.hpp"
@@ -33,7 +36,9 @@ class PhysXServer : public QuicServer {
 		float compression;
 	} timing;
 
-	struct Handle : Connection {
+	class Handle : public Connection, World::Player {
+		friend PhysXServer;
+
 		struct CacheItem {
 			PxRigidActor* obj;
 			uint32_t flags;
@@ -51,6 +56,9 @@ class PhysXServer : public QuicServer {
 		virtual void onConnect();
 		virtual void onData(string_view buffer);
 		virtual void onDisconnect();
+
+		virtual void move(float dt);
+		PhysXServer* getServer() { return static_cast<PhysXServer*>(server);  };
 	};
 
 	static void tick_timer_cb(uv_timer_t* handle);

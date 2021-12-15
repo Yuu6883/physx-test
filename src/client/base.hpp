@@ -6,9 +6,9 @@
 #include <PxPhysics.h>
 #include <PxPhysicsAPI.h>
 
-#include "../network/protocol/common.hpp"
 #include "../network/util/reader.hpp"
 #include "../network/quic/client.hpp"
+#include "../network/protocol/common.hpp"
 
 using std::mutex;
 using std::vector;
@@ -65,6 +65,9 @@ public:
 			auto radius = r.read<float>();
 		} else if (type == PLN_T) {
 			// 
+		} else if (type == CPS_T) {
+			auto radius = r.read<float>();
+			auto halfHeight = r.read<float>();
 		} else {
 			printf("Unknown network data type: %u\n", type);
 		}

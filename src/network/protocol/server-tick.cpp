@@ -6,7 +6,12 @@
 
 using namespace bitmagic;
 
+void PhysXServer::Handle::onData(string_view buffer) {
+
+}
+
 void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
+	if (!ct) return;
 
 	Writer w;
 
@@ -128,6 +133,11 @@ void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
 		} else if (type == PxGeometryType::ePLANE) {
 			header |= PLN_T;
 			// nothing
+		} else if (type == PxGeometryType::eCAPSULE) {
+			header |= CPS_T;
+			auto& cap = geo.capsule();
+			w.write<float>(cap.halfHeight);
+			w.write<float>(cap.radius);
 		} else {
 			header |= UNK_T;
 			// TODO: implement more shapes

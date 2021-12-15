@@ -60,6 +60,9 @@ World::World() {
 #endif
 
 	scene = physics->createScene(sceneDesc);
+	ctm = PxCreateControllerManager(*scene);
+
+	ctm->setOverlapRecoveryModule(true);
 }
 
 World::~World() {
@@ -116,6 +119,18 @@ void World::initScene() {
 
 	ball->setLinearVelocity(PxVec3(0, 25, 0));
 	scene->addActor(*ball);
+}
+
+void World::spawn(Player* player) {
+
+	PxCapsuleControllerDesc desc;
+	desc.material = physics->createMaterial(0.5f, 0.5f, 0.1f);
+	desc.height = 1.f;
+	desc.radius = 0.3f;
+	desc.userData = player;
+	desc.position = PxExtendedVec3(25.f, 1.f, 25.f);
+
+	player->ct = ctm->createController(desc);
 }
 
 void World::step(float dt, bool blocking) {

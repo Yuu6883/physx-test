@@ -72,7 +72,14 @@ public:
 	template<typename SyncCallback>
 	inline void sync(const SyncCallback& cb) {
 		m.lock();
-		cb(connections);
+		cb();
+		m.unlock();
+	}
+
+	template<typename SyncCallback>
+	inline void syncPerConn(const SyncCallback& cb) {
+		m.lock();
+		for (auto& conn : connections) cb(conn);
 		m.unlock();
 	}
 
@@ -92,8 +99,9 @@ public:
 	static int init();
 	static void cleanup();
 
+	list<Connection*> connections;
+
 private:
 	HQUIC listener;
 	mutex m; // Guards connections
-	list<Connection*> connections;
 };

@@ -102,6 +102,13 @@ class GUIClient : public BaseClient, public BaseRenderer {
 		void render();
 	};
 
+	class Capsule : public RenderableObject {
+	public:
+		float r, hh;
+		Capsule(float r, float hh) : r(r), hh(hh) {};
+		void render();
+	};
+
 	virtual void render();
 	virtual NetworkedObject* addObj(uint16_t type, uint16_t state, uint16_t flags, Reader& r);
 
