@@ -25,7 +25,7 @@ static float cylinderData[] = {
 	1.0f,0.0f,1.0f,1.0f,0.0f,1.0f,1.0f,0.0f,0.0f,1.0f,0.0f,0.0f
 };
 
-BaseRenderer::BaseRenderer(string name) : name(name) {
+BaseRenderer::BaseRenderer(string name) : name(name), cam(PxVec3(25.f), PxVec3(-1.f)) {
 
 	glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
@@ -49,6 +49,14 @@ BaseRenderer::BaseRenderer(string name) : name(name) {
 
 	glutMotionFuncUcall([](int x, int y, void* self) {
 		static_cast<BaseRenderer*>(self)->onMouseMove(x, y);
+	}, this);
+
+	glutKeyboardFuncUcall([](unsigned char key, int, int, void* self) {
+		static_cast<BaseRenderer*>(self)->onKeyDown(key);
+	}, this);
+
+	glutKeyboardUpFuncUcall([](unsigned char key, int, int, void* self) {
+		static_cast<BaseRenderer*>(self)->onKeyUp(key);
 	}, this);
 
 	setupState();
@@ -83,30 +91,21 @@ void BaseRenderer::setupState() {
 }
 
 void BaseRenderer::onMouseButton(int button, int mode, int x, int y) {
-	if (mode == GLUT_DOWN) {
-		lastMouseX = x;
-		lastMouseY = y;
-	}
-
-	if (button == GLUT_MIDDLE_BUTTON) {
-		state = 0;
-	}
-	else {
-		state = 1;
-	}
+	cam.mouseMode = mode;
+	cam.mouseX = x;
+	cam.mouseY = y;
 }
 
 void BaseRenderer::onMouseMove(int x, int y) {
-	if (state == 0) {
-		dist *= (1 + (y - lastMouseY) / 60.f);
-	}
-	else {
-		rotationY += (x - lastMouseX) / 5.f;
-		rotationX += (y - lastMouseY) / 5.f;
-	}
+	cam.onMouseMove(x, y);
+}
 
-	lastMouseX = x;
-	lastMouseY = y;
+void BaseRenderer::onKeyDown(unsigned char key) {
+	cam.downKeys.insert(key);
+}
+
+void BaseRenderer::onKeyUp(unsigned char key) {
+	cam.downKeys.erase(key);
 }
 
 void BaseRenderer::onResize(int w, int h) {
@@ -136,12 +135,21 @@ void BaseRenderer::onRender() {
 	stream << "FPS: " << std::fixed << std::setprecision(2) << fps;
 	auto fpsStr = stream.str();
 
+	for (auto& k : cam.downKeys) cam.onKey(k);
+
 	// Setup GL
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	// Setup camera
+	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	glTranslatef(0, 0, dist);
-	glRotatef(rotationX, 1, 0, 0);
-	glRotatef(rotationY, 0, 1, 0);
+	gluPerspective(60.0, GLdouble(glutGet(GLUT_WINDOW_WIDTH)) / GLdouble(glutGet(GLUT_WINDOW_HEIGHT)), 1.f, 1000.f);
+
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	gluLookAt(GLdouble(cam.eye.x), GLdouble(cam.eye.y), GLdouble(cam.eye.z), 
+		GLdouble(cam.eye.x + cam.dir.x), GLdouble(cam.eye.y + cam.dir.y), GLdouble(cam.eye.z + cam.dir.z), 
+		0.0, 1.0, 0.0);
 
 	// Render grid and axes
 	renderAxes();

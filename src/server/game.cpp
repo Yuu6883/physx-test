@@ -99,7 +99,7 @@ void PhysXServer::broadcastState() {
 
 	// printf("Query      : %4.4fms\n", timing.query);
 	// printf("Compression: %4.4fms\n", timing.compression);
-	printf("Num Actors : %u\n", nbActors);
+	// printf("Num Actors : %u\n", nbActors);
 }
 
 void PhysXServer::Handle::onConnect() {

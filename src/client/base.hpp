@@ -17,6 +17,7 @@ using namespace physx;
 class BaseClient : public QuicClient {
 	// Implemented in network/protocol/client-tick.cpp
 	void onData(string_view buffer);
+	void onInput() {};
 
 	uint64_t last_packet;
 	mutex m;
