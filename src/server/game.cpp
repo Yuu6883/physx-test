@@ -3,7 +3,7 @@
 using std::scoped_lock;
 
 PhysXServer::PhysXServer(uv_loop_t* loop) : QuicServer(), loop(loop), 
-	world(new World()), running(false), timing({ 0.f, 0.f }) {
+	world(new World()), running(false), timing({ 0.f }) {
 
 	uv_timer_init(loop, &tick_timer);
 	tick_timer.data = this;
@@ -79,32 +79,16 @@ void PhysXServer::broadcastState() {
 
 	auto start = high_resolution_clock::now();
 
-	auto QFLAGS = PxActorTypeFlag::eRIGID_DYNAMIC | PxActorTypeFlag::eRIGID_STATIC;
-
 	PxSceneReadLock lock(*scene);
-
-	auto nbActors = scene->getNbActors(QFLAGS);
-	if (!nbActors) return;
-
-	std::vector<PxRigidActor*> actors(nbActors);
-	scene->getActors(QFLAGS, reinterpret_cast<PxActor**>(actors.data()), nbActors);
-
-	unordered_set<PxRigidActor*> curr(actors.begin(), actors.end());
-
-	auto dt = high_resolution_clock::now() - start;
-	timing.query = duration<float, std::milli>(dt).count();
-	start = high_resolution_clock::now();
-
 	syncPerConn([&] (auto& conn) {
-		static_cast<Handle*>(conn)->onTick(curr);
+		static_cast<Handle*>(conn)->onTick(world->used_obj_masks, world->objects);
 	});
 
-	dt = high_resolution_clock::now() - start;
+	auto dt = high_resolution_clock::now() - start;
 	timing.compression = duration<float, std::milli>(dt).count();
 
-	// printf("Query      : %4.4fms\n", timing.query);
 	// printf("Compression: %4.4fms\n", timing.compression);
-	// printf("Num Actors : %u\n", nbActors);
+	// printf("Objects : %u\n", world->objects->size());
 }
 
 void PhysXServer::Handle::onConnect() {

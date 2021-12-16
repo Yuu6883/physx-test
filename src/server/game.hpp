@@ -3,7 +3,7 @@
 #include <map>
 #include <vector>
 #include <chrono>
-#include <unordered_set>
+#include <bitset>
 #include <uv.h>
 
 #include <PxPhysicsAPI.h>
@@ -14,7 +14,8 @@
 #include "../network/quic/server.hpp"
 
 using std::vector;
-using std::unordered_set;
+using std::bitset;
+using std::scoped_lock;
 using namespace std::chrono;
 
 class PhysXServer : public QuicServer {
@@ -32,7 +33,6 @@ class PhysXServer : public QuicServer {
 	void broadcastState();
 
 	struct {
-		float query;
 		float compression;
 	} timing;
 
@@ -40,18 +40,18 @@ class PhysXServer : public QuicServer {
 		friend PhysXServer;
 
 		struct CacheItem {
-			PxRigidActor* obj;
+			GameObject* obj;
 			uint32_t flags;
 			PxVec3 pos;
 		};
 
 		vector<CacheItem> cache;
-		unordered_set<PxRigidActor*> cache_set;
+		bitset<65536> cache_set;
 
 		static const size_t cache_size = sizeof(CacheItem);
 
 		// Implemented in network/protocol/server-tick.cpp
-		virtual void onTick(unordered_set<PxRigidActor*>& actors);
+		virtual void onTick(bitset<65536>& masks, vector<GameObject*>& objects);
 
 		virtual void onConnect();
 		virtual void onData(string_view buffer);

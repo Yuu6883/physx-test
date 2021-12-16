@@ -66,6 +66,11 @@ World::World() {
 	ctm = PxCreateControllerManager(*scene);
 
 	ctm->setOverlapRecoveryModule(true);
+
+	free_object_ids.reserve(65535);
+	for (int i = 65535; i > 0; i--) {
+		free_object_ids.push_back(uint16_t(i));
+	}
 }
 
 World::~World() {
@@ -75,14 +80,23 @@ World::~World() {
 	for (auto& obj : objects) delete obj;
 }
 
+uint16_t World::assignID() {
+	if (free_object_ids.empty()) return 0;
+
+	auto id = free_object_ids.back();
+	free_object_ids.pop_back();
+	used_obj_masks[id] = 1;
+	return id;
+}
+
 void World::initScene() {
-	PxSceneWriteLock lock(*scene);
+	PxSceneWriteLock sl(*scene);
+	scoped_lock ol(object_mutex);
 
     auto material = physics->createMaterial(0.5f, 0.5f, 0.1f);
     
 	auto ground = PxCreatePlane(*physics, PxPlane(0, 1, 0, 0), *material);
-	scene->addActor(*ground);
-	objects.push_back(new PrimitiveObject(static_cast<PxRigidActor*>(ground)));
+	addObject<PrimitiveObject>(ground, false);
 
 	for (int stack = 0; stack < 10; stack++) {
 		for (int i = -10; i <= 10; i++) {
@@ -90,25 +104,17 @@ void World::initScene() {
 				auto box = PxCreateDynamic(*physics, PxTransform(PxVec3(i, stack + 0.49f * 0.5f, j)),
 					PxBoxGeometry(0.49f, 0.49f, 0.49f), *material, 5.0f);
 				box->setAngularDamping(0.2f);
-				scene->addActor(*box);
-				objects.push_back(new PrimitiveObject(static_cast<PxRigidActor*>(box)));
+				addObject<PrimitiveObject>(box, false);
 			}
 		}
 	}
 
-	/*
-	auto panel = PxCreateDynamic(*physics, PxTransform(PxVec3(0.f, 20.f, 0.f)),
-		PxBoxGeometry(10.f, 0.48f, 10.f), *material, 10.0f);
-	scene->addActor(*panel);
-	*/
-
 	// Destroyer ball
 	auto ball = PxCreateDynamic(*physics, PxTransform(PxVec3(0, 25, 0)), PxSphereGeometry(10), *material, 10.0f);
 	ball->setAngularDamping(0.5f);
-
 	ball->setLinearVelocity(PxVec3(0, 25, 0));
-	scene->addActor(*ball);
-	objects.push_back(new PrimitiveObject(static_cast<PxRigidActor*>(ball)));
+
+	addObject<PrimitiveObject>(ball, false);
 }
 
 void World::spawn(Player* player) {
@@ -206,22 +212,33 @@ void World::step(float dt, bool blocking) {
 }
 
 void World::gc() {
+	// Actual deallocation happens 1 tick after "gc", 
+	// so player onTick function can still have access to the "freed" object
+	for (auto& ptr : trashQ) delete ptr;
+	if (trashQ.size()) printf("Cleaned up %u objects\n", trashQ.size());
+	trashQ.clear();
+
 	scoped_lock ol(object_mutex);
 	PxSceneWriteLock sl(*scene);
 
-	auto os = objects.size();
-
-	objects.erase(std::remove_if(objects.begin(), objects.end(), [](GameObject*& obj) {
+	objects.erase(std::remove_if(objects.begin(), objects.end(), [&](GameObject*& obj) {
 		if (obj->removing) {
-			obj->remove();
-			delete obj;
+
+			// requires scene lock
+			if (obj->actor && obj->actor->isReleasable()) {
+				obj->actor->release();
+				obj->actor = nullptr;
+			}
+
+			// requires object lock
+			free_object_ids.push_back(obj->id);
+			used_obj_masks[obj->id] = 0;
+
+			// Push to trash queue to clean up in next tick
+			trashQ.push_back(obj);
 			return true;
 		} else return false;
 	}), objects.end());
-
-	auto cleaned = os - objects.size();
-
-	if (cleaned) printf("Cleaned up %u objects\n", cleaned);
 }
 
 void World::syncSim() {

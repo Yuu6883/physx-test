@@ -8,26 +8,27 @@
 
 #include <vector>
 #include <mutex>
+#include <bitset>
 #include "../network/protocol/common.hpp"
 
 using namespace physx;
 using std::mutex;
 using std::vector;
+using std::bitset;
 using std::scoped_lock;
 
 class PhysXServer;
 
 struct GameObject {
     bool removing;
+    uint16_t id;
     PxRigidActor* actor;
     virtual bool isPrimitive() = 0;
     virtual bool isPlayer() = 0;
-    virtual void remove() {
-        if (actor->isReleasable()) actor->release();
-    }
     void deferRemove() { removing = true; }
-    GameObject(PxRigidActor* actor) : actor(actor), removing(false) {
-        if (actor) actor->userData = this;
+    GameObject(uint16_t id) : id(id), actor(nullptr), removing(false) {};
+    GameObject(uint16_t id, PxRigidActor* actor) : id(id), actor(actor), removing(false) {
+        actor->userData = this;
     }
     virtual ~GameObject() {};
 };
@@ -35,7 +36,7 @@ struct GameObject {
 struct PrimitiveObject : GameObject {
     virtual bool isPrimitive() { return true; };
     virtual bool isPlayer() { return false; };
-    PrimitiveObject(PxRigidActor* actor) : GameObject(actor) {};
+    PrimitiveObject(uint16_t id, PxRigidActor* actor) : GameObject(id, actor) {};
 };
 
 struct Player : GameObject {
@@ -56,7 +57,7 @@ struct Player : GameObject {
 
     // Need to be called from the world thread
     virtual void move(float dt) {};
-    Player() : GameObject(nullptr), ct(nullptr) {};
+    Player() : GameObject(0), ct(nullptr) {};
 };
 
 class World {
@@ -69,6 +70,9 @@ class World {
     uint64_t tick = 0;
     mutex object_mutex;
     vector<GameObject*> objects;
+    vector<GameObject*> trashQ;
+    vector<uint16_t> free_object_ids;
+    bitset<65536> used_obj_masks;
 
 public:
     static int init();
@@ -78,6 +82,30 @@ public:
     ~World();
 
     void initScene();
+
+    // Assign object ID
+    uint16_t assignID();
+
+    // Assign an ID and add it to the list
+    template<typename T>
+    bool addObject(PxRigidActor* actor, bool lock = true) {
+        if (lock) {
+            PxSceneWriteLock sl(*scene);
+            scoped_lock ol(object_mutex);
+
+            scene->addActor(*actor);
+            auto id = assignID();
+            if (!id) return false;
+            objects.push_back(new T(id, actor));
+        }
+        else {
+            scene->addActor(*actor);
+            auto id = assignID();
+            if (!id) return false;
+            objects.push_back(new T(id, actor));
+        }
+        return true;
+    }
 
     void spawn(Player* player);
     void move(Player* player, float dt);

@@ -11,13 +11,11 @@ void PhysXServer::Handle::onData(string_view buffer) {
 	bool error = false;
 	Reader r(buffer, error);
 
-	std::scoped_lock<mutex> lock(input_mutex);
+	scoped_lock lock(input_mutex);
 	r.read<PlayerInput>(input);
 }
 
-void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
-	if (!ct) return;
-
+void PhysXServer::Handle::onTick(bitset<65536>& masks, vector<GameObject*>& curr) {
 	Writer w;
 
 	w.write<uint8_t>(PROTO_VER[0]);
@@ -38,35 +36,36 @@ void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
 		auto entry = &cache[i];
 
 		if (write_id < i) {
-			cache[write_id] = cache[i]; // copy
+			cache[write_id] = cache[i]; // move cache item 
 			entry = &cache[write_id];
 		}
 
 		auto& prevFlags = entry->flags;
 		auto& prevPos = entry->pos;
 
-		if (curr.find(entry->obj) == curr.end()) {
+		// We need to make sure cached obj is still in memory at this point
+		if (!masks[entry->obj->id]) {
 			// remove
 			w.write<uint8_t>(UPD_STATE | OBJ_REMOVE);
-			cache_set.erase(entry->obj);
+			cache_set[entry->obj->id] = 0;
 		} else {
 			write_id++; // Keep current cache in the array
 
-			auto obj = entry->obj;
+			auto actor = entry->obj->actor;
 
 			// skip static object
-			if (obj->is<PxRigidStatic>()) continue;
+			if (actor->is<PxRigidStatic>()) continue;
 
 			uint32_t newFlags = 0;
-			if (obj->is<PxRigidDynamic>() &&
-				obj->is<PxRigidDynamic>()->isSleeping()) newFlags |= OBJ_SLEEP;
+			if (actor->is<PxRigidDynamic>() &&
+				actor->is<PxRigidDynamic>()->isSleeping()) newFlags |= OBJ_SLEEP;
 
 			bool sleepToggled = ((prevFlags ^ newFlags) & OBJ_SLEEP);
 			// TODO: other flags?
 			prevFlags = newFlags;
 
 			if (sleepToggled) {
-				auto t = obj->getGlobalPose();
+				auto t = actor->getGlobalPose();
 				const auto& currPos = t.p;
 
 				// Obj goes to sleep
@@ -91,7 +90,7 @@ void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
 					// normal update
 					auto& header = w.ref<uint8_t>(UPD_OBJ);
 
-					auto t = obj->getGlobalPose();
+					auto t = actor->getGlobalPose();
 					const auto& currPos = t.p;
 					auto& x = w.ref<uint8_t>();
 					auto& y = w.ref<uint8_t>();
@@ -110,20 +109,23 @@ void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
 
 	auto& adding = w.ref<uint32_t>();
 
-	for (auto obj : curr) {
-		if (cache_set.find(obj) != cache_set.end()) continue;
-		if (obj->getShapes(&shape, 1) != 1) continue;
+	for (auto& obj : curr) {
+		// already cached or does not have an assigned ID
+		if (!obj->id || cache_set[obj->id]) continue;
+
+		auto actor = obj->actor;
+		if (actor->getShapes(&shape, 1) != 1) continue;
 
 		uint8_t headerInit = ADD_OBJ_DY;
-		if (obj->is<PxRigidStatic>()) headerInit = ADD_OBJ_ST;
-		else if (!obj->is<PxRigidDynamic>()) continue; // ???
+		if (actor->is<PxRigidStatic>()) headerInit = ADD_OBJ_ST;
+		else if (!actor->is<PxRigidDynamic>()) continue; // ???
 
 		// Write to buffer (shape contains the shape singleton)
 		auto& header = w.ref<uint8_t>(headerInit);
 
 		auto geo = shape->getGeometry();
 		auto type = geo.getType();
-		const auto t = obj->getGlobalPose();
+		const auto t = actor->getGlobalPose();
 
 		PxVec3 toCache;
 		vec3_48_encode_wb(toCache, t.p, w.ref<uint16_t>(), w.ref<uint16_t>(), w.ref<uint16_t>());
@@ -151,7 +153,7 @@ void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
 
 		// Add to cache
 		cache.push_back({ obj, 0, toCache });
-		cache_set.insert(obj);
+		cache_set[obj->id] = 1;
 
 		adding++;
 	}
