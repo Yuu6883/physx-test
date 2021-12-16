@@ -36,7 +36,7 @@ class PhysXServer : public QuicServer {
 		float compression;
 	} timing;
 
-	class Handle : public Connection, World::Player {
+	class Handle : public Connection, Player {
 		friend PhysXServer;
 
 		struct CacheItem {
@@ -59,6 +59,7 @@ class PhysXServer : public QuicServer {
 
 		virtual void move(float dt);
 		PhysXServer* getServer() { return static_cast<PhysXServer*>(server);  };
+		World* getWorld() { return getServer()->world; }
 	};
 
 	static void tick_timer_cb(uv_timer_t* handle);

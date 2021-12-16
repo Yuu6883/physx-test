@@ -1,65 +1,19 @@
 #include <uv.h>
 #include "gui.hpp"
 
-static float CylinderData[] = {
-	1.0f,0.0f,1.0f,1.0f,0.0f,1.0f,1.0f,0.0f,0.0f,1.0f,0.0f,0.0f,
-	0.866025f,0.500000f,1.0f,0.866025f,0.500000f,1.0f,0.866025f,0.500000f,0.0f,0.866025f,0.500000f,0.0f,
-	0.500000f,0.866025f,1.0f,0.500000f,0.866025f,1.0f,0.500000f,0.866025f,0.0f,0.500000f,0.866025f,0.0f,
-	-0.0f,1.0f,1.0f,-0.0f,1.0f,1.0f,-0.0f,1.0f,0.0f,-0.0f,1.0f,0.0f,
-	-0.500000f,0.866025f,1.0f,-0.500000f,0.866025f,1.0f,-0.500000f,0.866025f,0.0f,-0.500000f,0.866025f,0.0f,
-	-0.866025f,0.500000f,1.0f,-0.866025f,0.500000f,1.0f,-0.866025f,0.500000f,0.0f,-0.866025f,0.500000f,0.0f,
-	-1.0f,-0.0f,1.0f,-1.0f,-0.0f,1.0f,-1.0f,-0.0f,0.0f,-1.0f,-0.0f,0.0f,
-	-0.866025f,-0.500000f,1.0f,-0.866025f,-0.500000f,1.0f,-0.866025f,-0.500000f,0.0f,-0.866025f,-0.500000f,0.0f,
-	-0.500000f,-0.866025f,1.0f,-0.500000f,-0.866025f,1.0f,-0.500000f,-0.866025f,0.0f,-0.500000f,-0.866025f,0.0f,
-	0.0f,-1.0f,1.0f,0.0f,-1.0f,1.0f,0.0f,-1.0f,0.0f,0.0f,-1.0f,0.0f,
-	0.500000f,-0.866025f,1.0f,0.500000f,-0.866025f,1.0f,0.500000f,-0.866025f,0.0f,0.500000f,-0.866025f,0.0f,
-	0.866026f,-0.500000f,1.0f,0.866026f,-0.500000f,1.0f,0.866026f,-0.500000f,0.0f,0.866026f,-0.500000f,0.0f,
-	1.0f,0.0f,1.0f,1.0f,0.0f,1.0f,1.0f,0.0f,0.0f,1.0f,0.0f,0.0f
-};
-
 void GUIClient::Cube::render() {
-	glScalef(halfExtents.x, halfExtents.y, halfExtents.z);
-	glutSolidCube(2.0);
+	cube(halfExtents);
 }
 
 void GUIClient::Sphere::render() {
-	glutSolidSphere(GLdouble(radius), 100, 100);
+	sphere(radius);
 }
 
 void GUIClient::Plane::render() {
 }
 
 void GUIClient::Capsule::render() {
-	const PxF32 radius = r;
-	const PxF32 halfHeight = hh;
-
-	//Sphere
-	glPushMatrix();
-	glTranslatef(halfHeight, 0.0f, 0.0f);
-	glScalef(radius, radius, radius);
-	glutSolidSphere(1, 10, 10);
-	glPopMatrix();
-
-	//Sphere
-	glPushMatrix();
-	glTranslatef(-halfHeight, 0.0f, 0.0f);
-	glScalef(radius, radius, radius);
-	glutSolidSphere(1, 10, 10);
-	glPopMatrix();
-
-	//Cylinder
-	glPushMatrix();
-	glTranslatef(-halfHeight, 0.0f, 0.0f);
-	glScalef(2.0f * halfHeight, radius, radius);
-	glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_NORMAL_ARRAY);
-	glVertexPointer(3, GL_FLOAT, 2 * 3 * sizeof(float), CylinderData);
-	glNormalPointer(GL_FLOAT, 2 * 3 * sizeof(float), CylinderData + 3);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 13 * 2);
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_NORMAL_ARRAY);
-	glPopMatrix();
+	capsule(r, hh);
 }
 
 constexpr float MS_TO_NANO = 1000000.f;

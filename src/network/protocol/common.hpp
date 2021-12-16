@@ -30,7 +30,9 @@ constexpr uint8_t UNK_T = 63;
 
 struct PlayerState {
 	bool ground : 1;
-	PlayerState() : ground(true) {};
+	uint64_t lastGroundTick;
+	PxVec3 velocity;
+	PlayerState() : ground(false), lastGroundTick(0), velocity(PxZero) {};
 };
 
 struct PlayerInput {
@@ -39,6 +41,6 @@ struct PlayerInput {
 	bool movB : 1;
 	bool movL : 1;
 	bool movR : 1;
-	PxVec3 target;
-	PlayerInput() : jump(false), movF(false), movB(false), movL(false), movR(false), target(PxZero) {};
+	PxVec2 dir;
+	PlayerInput() : jump(false), movF(false), movB(false), movL(false), movR(false), dir(PxZero) {};
 };

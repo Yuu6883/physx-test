@@ -9,7 +9,7 @@
 
 using namespace std::chrono;
 
-static float cylinderData[] = {
+static float CylinderData[] = {
 	1.0f,0.0f,1.0f,1.0f,0.0f,1.0f,1.0f,0.0f,0.0f,1.0f,0.0f,0.0f,
 	0.866025f,0.500000f,1.0f,0.866025f,0.500000f,1.0f,0.866025f,0.500000f,0.0f,0.866025f,0.500000f,0.0f,
 	0.500000f,0.866025f,1.0f,0.500000f,0.866025f,1.0f,0.500000f,0.866025f,0.0f,0.500000f,0.866025f,0.0f,
@@ -25,7 +25,8 @@ static float cylinderData[] = {
 	1.0f,0.0f,1.0f,1.0f,0.0f,1.0f,1.0f,0.0f,0.0f,1.0f,0.0f,0.0f
 };
 
-BaseRenderer::BaseRenderer(string name) : name(name), cam(PxVec3(25.f), PxVec3(-1.f)) {
+BaseRenderer::BaseRenderer(string name, BaseCamera* cam) : name(name), cam(cam) {
+	if (!cam) this->cam = new BaseCamera(PxVec3(25.f), PxVec3(-1.f));
 
 	glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
@@ -91,21 +92,21 @@ void BaseRenderer::setupState() {
 }
 
 void BaseRenderer::onMouseButton(int button, int mode, int x, int y) {
-	cam.mouseMode = mode;
-	cam.mouseX = x;
-	cam.mouseY = y;
+	cam->mouseMode = mode;
+	cam->mouseX = x;
+	cam->mouseY = y;
 }
 
 void BaseRenderer::onMouseMove(int x, int y) {
-	cam.onMouseMove(x, y);
+	cam->onMouseMove(x, y);
 }
 
 void BaseRenderer::onKeyDown(unsigned char key) {
-	cam.downKeys.insert(key);
+	cam->downKeys.insert(key);
 }
 
 void BaseRenderer::onKeyUp(unsigned char key) {
-	cam.downKeys.erase(key);
+	cam->downKeys.erase(key);
 }
 
 void BaseRenderer::onResize(int w, int h) {
@@ -135,7 +136,7 @@ void BaseRenderer::onRender() {
 	stream << "FPS: " << std::fixed << std::setprecision(2) << fps;
 	auto fpsStr = stream.str();
 
-	for (auto& k : cam.downKeys) cam.onKey(k);
+	for (auto& k : cam->downKeys) cam->onKey(k);
 
 	// Setup GL
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -147,8 +148,11 @@ void BaseRenderer::onRender() {
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	gluLookAt(GLdouble(cam.eye.x), GLdouble(cam.eye.y), GLdouble(cam.eye.z), 
-		GLdouble(cam.eye.x + cam.dir.x), GLdouble(cam.eye.y + cam.dir.y), GLdouble(cam.eye.z + cam.dir.z), 
+
+	auto& eye = cam->eye;
+	auto& dir = cam->dir;
+	gluLookAt(GLdouble(eye.x), GLdouble(eye.y), GLdouble(eye.z), 
+		GLdouble(eye.x + dir.x), GLdouble(eye.y + dir.y), GLdouble(eye.z + dir.z), 
 		0.0, 1.0, 0.0);
 
 	// Render grid and axes
@@ -260,5 +264,44 @@ void BaseRenderer::loop() {
 }
 
 BaseRenderer::~BaseRenderer() {
+	if (cam) delete cam;
+}
 
+void BaseRenderer::cube(PxVec3 halfExtents) {
+	glScalef(halfExtents.x, halfExtents.y, halfExtents.z);
+	glutSolidCube(2.0);
+}
+
+void BaseRenderer::sphere(float radius) {
+	glutSolidSphere(GLdouble(radius), 100, 100);
+}
+
+void BaseRenderer::capsule(float radius, float halfHeight) {
+	//Sphere
+	glPushMatrix();
+	glTranslatef(halfHeight, 0.0f, 0.0f);
+	glScalef(radius, radius, radius);
+	glutSolidSphere(1, 10, 10);
+	glPopMatrix();
+
+	//Sphere
+	glPushMatrix();
+	glTranslatef(-halfHeight, 0.0f, 0.0f);
+	glScalef(radius, radius, radius);
+	glutSolidSphere(1, 10, 10);
+	glPopMatrix();
+
+	//Cylinder
+	glPushMatrix();
+	glTranslatef(-halfHeight, 0.0f, 0.0f);
+	glScalef(2.0f * halfHeight, radius, radius);
+	glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_NORMAL_ARRAY);
+	glVertexPointer(3, GL_FLOAT, 2 * 3 * sizeof(float), CylinderData);
+	glNormalPointer(GL_FLOAT, 2 * 3 * sizeof(float), CylinderData + 3);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 13 * 2);
+	glDisableClientState(GL_VERTEX_ARRAY);
+	glDisableClientState(GL_NORMAL_ARRAY);
+	glPopMatrix();
 }

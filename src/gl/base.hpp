@@ -74,7 +74,7 @@ struct BaseCamera {
 class BaseRenderer {
     string name;
 
-    BaseCamera cam;
+    BaseCamera* cam;
 
     float fps = 0;
 
@@ -105,9 +105,13 @@ class BaseRenderer {
 
     static void timer(int value, void* self);
 public:
-    BaseRenderer(string name = "Base Renderer");
+    BaseRenderer(string name = "Base Renderer", BaseCamera* cam = nullptr);
     virtual ~BaseRenderer();
 
     virtual void loop();
     virtual void render() = 0;
+
+    static void cube(PxVec3 halfExtends);
+    static void sphere(float radius);
+    static void capsule(float radius, float halfHeight);
 };

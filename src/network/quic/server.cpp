@@ -130,8 +130,6 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
             ctx->server->sync([&] { ctx->server->connections.remove(ctx); });
             ctx->onDisconnect();
 
-            delete ctx;
-
             MsQuic->ConnectionClose(conn);
             break;
         }

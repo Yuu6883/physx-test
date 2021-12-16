@@ -1,5 +1,7 @@
 #include "game.hpp"
 
+using std::scoped_lock;
+
 PhysXServer::PhysXServer(uv_loop_t* loop) : QuicServer(), loop(loop), 
 	world(new World()), running(false), timing({ 0.f, 0.f }) {
 
@@ -52,10 +54,9 @@ void PhysXServer::run(uint64_t msTickInterval, uint64_t msNetInterval) {
 
 void PhysXServer::tick(uint64_t now, float realDelay) {
 	if (world) {
-		if (!count()) return;
 
 		float delaySec = realDelay * 0.001f;
-		syncPerConn([delaySec](auto& conn) {
+		syncPerConn([this, delaySec](auto& conn) {
 			static_cast<Handle*>(conn)->move(delaySec);
 		});
 
@@ -67,6 +68,7 @@ void PhysXServer::tick(uint64_t now, float realDelay) {
 		}
 
 		world->syncSim();
+		world->gc();
 	}
 }
 
@@ -79,6 +81,8 @@ void PhysXServer::broadcastState() {
 
 	auto QFLAGS = PxActorTypeFlag::eRIGID_DYNAMIC | PxActorTypeFlag::eRIGID_STATIC;
 
+	PxSceneReadLock lock(*scene);
+
 	auto nbActors = scene->getNbActors(QFLAGS);
 	if (!nbActors) return;
 
@@ -89,6 +93,7 @@ void PhysXServer::broadcastState() {
 
 	auto dt = high_resolution_clock::now() - start;
 	timing.query = duration<float, std::milli>(dt).count();
+	start = high_resolution_clock::now();
 
 	syncPerConn([&] (auto& conn) {
 		static_cast<Handle*>(conn)->onTick(curr);
@@ -103,35 +108,16 @@ void PhysXServer::broadcastState() {
 }
 
 void PhysXServer::Handle::onConnect() {
-	auto server = getServer();
-	server->sync([&] {
-		server->world->spawn(this);
-	});
+	scoped_lock lock(world_mutex);
+	getWorld()->spawn(this);
 }
 
 void PhysXServer::Handle::onDisconnect() {
-	auto server = getServer();
-	server->sync([&] {
-		ct->release();
-		ct = nullptr;
-	});
+	scoped_lock lock(world_mutex);
+	getWorld()->destroy(this);
 }
 
-static const PxControllerFilters ctFilters;
-
 void PhysXServer::Handle::move(float dt) {
-	if (!ct) return;
-
-	PlayerInput input;
-
-	{
-		std::scoped_lock lock(input_mutex);
-		input = this->input;
-	}
-
-	PxVec3 dir(input.target.x, input.target.y, 0);
-	auto len = dir.normalize();
-
-	if (len <= 0) return;
-	auto flags = ct->move(dir, 0.001f, dt, ctFilters);
+	scoped_lock lock(world_mutex);
+	getWorld()->move(this, dt);
 }

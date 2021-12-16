@@ -88,17 +88,16 @@ if (WIN32)
     find_package(msquic CONFIG REQUIRED)
 
     add_executable("server-gui" ${SRC_SERVER_FILES})
-    target_link_libraries("server-gui" ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv freeglut msquic)
-        
+    target_link_libraries("server-gui" ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv ${GLUT_LIBRARIES} msquic)
+
     add_executable("client-gui" ${SRC_CLIENT_FILES})
-    target_link_libraries("client-gui" ${OPENGL_LIBRARIES} libuv freeglut msquic)
+    target_link_libraries("client-gui" ${OPENGL_LIBRARIES} libuv ${GLUT_LIBRARIES} msquic)
 
     add_executable("server-headless" ${SRC_HEADLESS_SERVER_FILES})
     target_link_libraries("server-headless" ${PHYSX_LIBS} libuv msquic)
         
     add_executable("client-headless" ${SRC_HEADLESS_CLIENT_FILES})
     target_link_libraries("client-headless" msquic libuv)
-    
 else()
     # set(OpenGL_GL_PREFERENCE LEGACY)
     # find_package(OpenGL REQUIRED)

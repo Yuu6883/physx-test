@@ -1,13 +1,18 @@
 #include "common.hpp"
 
 #include "../../server/game.hpp"
+#include "../util/reader.hpp"
 #include "../util/writer.hpp"
 #include "../util/bitmagic.hpp"
 
 using namespace bitmagic;
 
 void PhysXServer::Handle::onData(string_view buffer) {
+	bool error = false;
+	Reader r(buffer, error);
 
+	std::scoped_lock<mutex> lock(input_mutex);
+	r.read<PlayerInput>(input);
 }
 
 void PhysXServer::Handle::onTick(unordered_set<PxRigidActor*>& curr) {
