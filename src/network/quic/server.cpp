@@ -94,8 +94,8 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
                 break;
             }
 
-            ctx->server->sync([&] { ctx->server->connections.push_back(ctx); });
             ctx->onConnect();
+            ctx->server->sync([&] { ctx->server->connections.push_back(ctx); });
 
             break;
         }

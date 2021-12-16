@@ -53,23 +53,22 @@ void PhysXServer::run(uint64_t msTickInterval, uint64_t msNetInterval) {
 }
 
 void PhysXServer::tick(uint64_t now, float realDelay) {
-	if (world) {
+	if (!world) return;
 
-		float delaySec = realDelay * 0.001f;
-		syncPerConn([this, delaySec](auto& conn) {
-			static_cast<Handle*>(conn)->move(delaySec);
-		});
+	float delaySec = realDelay * 0.001f;
+	syncPerConn([this, delaySec](auto& conn) {
+		static_cast<Handle*>(conn)->move(delaySec);
+	});
 
-		world->step(tickIntervalNano / 1000000000.f, false);
+	world->step(tickIntervalNano / 1000000000.f, false);
 
-		if (now > last_net + netIntervalNano) {
-			last_net = last_net + netIntervalNano;
-			broadcastState();
-		}
+	if (now > last_net + netIntervalNano) {
+		last_net = last_net + netIntervalNano;
 
-		world->syncSim();
-		world->gc();
+		broadcastState();
 	}
+
+	world->syncSim();
 }
 
 void PhysXServer::broadcastState() {
@@ -79,16 +78,19 @@ void PhysXServer::broadcastState() {
 
 	auto start = high_resolution_clock::now();
 
-	PxSceneReadLock lock(*scene);
-	syncPerConn([&] (auto& conn) {
-		static_cast<Handle*>(conn)->onTick(world->used_obj_masks, world->objects);
-	});
+	{
+		PxSceneReadLock lock(*scene);
+		syncPerConn([&](auto& conn) {
+			static_cast<Handle*>(conn)->onTick(world->used_obj_masks, world->objects);
+		});
+	}
 
 	auto dt = high_resolution_clock::now() - start;
 	timing.compression = duration<float, std::milli>(dt).count();
 
 	// printf("Compression: %4.4fms\n", timing.compression);
 	// printf("Objects : %u\n", world->objects->size());
+	world->gc();
 }
 
 void PhysXServer::Handle::onConnect() {
@@ -96,12 +98,12 @@ void PhysXServer::Handle::onConnect() {
 	getWorld()->spawn(this);
 }
 
-void PhysXServer::Handle::onDisconnect() {
-	scoped_lock lock(world_mutex);
-	getWorld()->destroy(this);
-}
-
 void PhysXServer::Handle::move(float dt) {
 	scoped_lock lock(world_mutex);
 	getWorld()->move(this, dt);
+}
+
+void PhysXServer::Handle::onDisconnect() {
+	scoped_lock lock(world_mutex);
+	getWorld()->destroy(this);
 }

@@ -47,17 +47,11 @@ void BaseClient::onData(string_view buffer) {
 	// auto start = uv_hrtime(); // around 0.3ms for 4k objects
 
 	// Update object loop -> update flags, position, and quaternion
-	uint32_t write_id = 0;
+	size_t write_id = 0;
 	for (uint32_t i = 0; i < cacheSize; i++) {
 		if (write_id < i) memcpy(&data[write_id], &data[i], sizeof(NetworkData));
 
 		NetworkData& obj = data[write_id];
-
-		// Skip static object (or should just save it to a different array?)
-		if (obj.state & STATIC_OBJ) {
-			write_id++;
-			continue;
-		}
 
 		auto header = r.read<uint8_t>();
 		auto subop = header & SUBOP_BITS;
@@ -100,7 +94,6 @@ void BaseClient::onData(string_view buffer) {
 					// Not possible??? subop should be UPD_OBJ for this
 				}
 			}
-
 			obj.flags = newFlags;
 
 		} else if (subop == UPD_OBJ) {
@@ -120,8 +113,10 @@ void BaseClient::onData(string_view buffer) {
 	}
 
 	uint64_t adding = r.read<uint32_t>();
-	data.reserve(cacheSize + adding);
-	data.resize(cacheSize + adding);
+
+	auto newSize = write_id + adding;
+	data.reserve(newSize);
+	data.resize(newSize);
 
 	if (adding) {
 		if (adding > 65536) {
@@ -136,7 +131,7 @@ void BaseClient::onData(string_view buffer) {
 	// Add object loop -> add new objects static/dynamic
 	for (uint32_t i = 0; i < adding; i++) {
 		auto header = r.read<uint8_t>();
-		auto& obj = data[cacheSize + i];
+		auto& obj = data[write_id + i];
 
 		auto subop = header & SUBOP_BITS;
 		if (subop == ADD_OBJ_ST) {
@@ -161,9 +156,13 @@ void BaseClient::onData(string_view buffer) {
 	}
 
 	auto expectedCacheSize = r.read<uint32_t>();
+	
 	// Strict integrity check
 	if (data.size() != expectedCacheSize || !r.eof() || error) {
 		printf("Data integrity check failed\n");
+		printf("data.size() = %u, expected = %u\n", data.size(), expectedCacheSize);
+		printf("eof = %s\n", r.eof() ? "true" : "false");
+		printf("error = %s\n", error ? "true" : "false");
 		disconnect();
 		exit(1);
 	}

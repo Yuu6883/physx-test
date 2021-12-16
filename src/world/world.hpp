@@ -6,6 +6,7 @@
 #include <extensions/PxExtensionsAPI.h>
 #include <common/PxTolerancesScale.h>
 
+#include <atomic>
 #include <vector>
 #include <mutex>
 #include <bitset>
@@ -15,17 +16,24 @@ using namespace physx;
 using std::mutex;
 using std::vector;
 using std::bitset;
+using std::atomic;
 using std::scoped_lock;
 
 class PhysXServer;
 
 struct GameObject {
-    bool removing;
+    atomic<bool> removing;
     uint16_t id;
     PxRigidActor* actor;
+
     virtual bool isPrimitive() = 0;
     virtual bool isPlayer() = 0;
-    void deferRemove() { removing = true; }
+
+    bool deferRemove() { 
+        bool expected = false;
+        return removing.compare_exchange_weak(expected, true);
+    }
+
     GameObject(uint16_t id) : id(id), actor(nullptr), removing(false) {};
     GameObject(uint16_t id, PxRigidActor* actor) : id(id), actor(actor), removing(false) {
         actor->userData = this;
@@ -74,6 +82,8 @@ class World {
     vector<uint16_t> free_object_ids;
     bitset<65536> used_obj_masks;
 
+    PxMaterial* shared_mat;
+
 public:
     static int init();
     static void cleanup();
@@ -87,24 +97,26 @@ public:
     uint16_t assignID();
 
     // Assign an ID and add it to the list
-    template<typename T>
-    bool addObject(PxRigidActor* actor, bool lock = true) {
-        if (lock) {
+    template<typename T, bool lock = true>
+    T* addObject(PxRigidActor* actor) {
+        if constexpr (lock) {
             PxSceneWriteLock sl(*scene);
             scoped_lock ol(object_mutex);
 
             scene->addActor(*actor);
             auto id = assignID();
-            if (!id) return false;
-            objects.push_back(new T(id, actor));
-        }
-        else {
+            if (!id) return nullptr;
+            auto ptr = new T(id, actor);
+            objects.push_back(ptr);
+            return ptr;
+        } else {
             scene->addActor(*actor);
             auto id = assignID();
-            if (!id) return false;
-            objects.push_back(new T(id, actor));
+            if (!id) return nullptr;
+            auto ptr = new T(id, actor);
+            objects.push_back(ptr);
+            return ptr;
         }
-        return true;
     }
 
     void spawn(Player* player);

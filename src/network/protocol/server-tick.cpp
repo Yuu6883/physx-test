@@ -32,6 +32,7 @@ void PhysXServer::Handle::onTick(bitset<65536>& masks, vector<GameObject*>& curr
 	PxShape* shape = nullptr;
 
 	uint32_t write_id = 0;
+
 	for (uint32_t i = 0; i < cacheSize; i++) {
 		auto entry = &cache[i];
 
@@ -53,11 +54,9 @@ void PhysXServer::Handle::onTick(bitset<65536>& masks, vector<GameObject*>& curr
 
 			auto actor = entry->obj->actor;
 
-			// skip static object
-			if (actor->is<PxRigidStatic>()) continue;
-
 			uint32_t newFlags = 0;
-			if (actor->is<PxRigidDynamic>() &&
+			if (actor->is<PxRigidStatic>() ||
+				actor->is<PxRigidDynamic>() &&
 				actor->is<PxRigidDynamic>()->isSleeping()) newFlags |= OBJ_SLEEP;
 
 			bool sleepToggled = ((prevFlags ^ newFlags) & OBJ_SLEEP);

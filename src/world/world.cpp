@@ -1,5 +1,6 @@
 #include "world.hpp"
 #include <thread>
+#include <random>
 
 using std::scoped_lock;
 
@@ -62,6 +63,7 @@ World::World() {
 	}
 #endif
 
+	shared_mat = physics->createMaterial(0.5f, 0.5f, 0.1f);
 	scene = physics->createScene(sceneDesc);
 	ctm = PxCreateControllerManager(*scene);
 
@@ -77,6 +79,7 @@ World::~World() {
     dispatcher->release();
     scene->release();
 
+	for (auto& obj : trashQ) delete obj;
 	for (auto& obj : objects) delete obj;
 }
 
@@ -90,38 +93,14 @@ uint16_t World::assignID() {
 }
 
 void World::initScene() {
-	PxSceneWriteLock sl(*scene);
-	scoped_lock ol(object_mutex);
-
-    auto material = physics->createMaterial(0.5f, 0.5f, 0.1f);
-    
-	auto ground = PxCreatePlane(*physics, PxPlane(0, 1, 0, 0), *material);
-	addObject<PrimitiveObject>(ground, false);
-
-	for (int stack = 0; stack < 10; stack++) {
-		for (int i = -10; i <= 10; i++) {
-			for (int j = -10; j <= 10; j++) {
-				auto box = PxCreateDynamic(*physics, PxTransform(PxVec3(i, stack + 0.49f * 0.5f, j)),
-					PxBoxGeometry(0.49f, 0.49f, 0.49f), *material, 5.0f);
-				box->setAngularDamping(0.2f);
-				addObject<PrimitiveObject>(box, false);
-			}
-		}
-	}
-
-	// Destroyer ball
-	auto ball = PxCreateDynamic(*physics, PxTransform(PxVec3(0, 25, 0)), PxSphereGeometry(10), *material, 10.0f);
-	ball->setAngularDamping(0.5f);
-	ball->setLinearVelocity(PxVec3(0, 25, 0));
-
-	addObject<PrimitiveObject>(ball, false);
+	auto ground = PxCreatePlane(*physics, PxPlane(0, 1, 0, 0), *shared_mat);
+	addObject<PrimitiveObject>(ground);
 }
 
 void World::spawn(Player* player) {
-
 	PxCapsuleControllerDesc desc;
 
-	desc.material = physics->createMaterial(0.5f, 0.5f, 0.1f);
+	desc.material = shared_mat;
 	desc.height = 1.2f;
 	desc.radius = 0.5f;
 	desc.slopeLimit = 0.f;
@@ -145,14 +124,15 @@ void World::spawn(Player* player) {
 		scoped_lock lock(object_mutex);
 		objects.push_back(player);
 	}
+
+	printf("Spawned player 0x%p\n", player);
 }
 
 void World::move(Player* player, float dt) {
-
 	PlayerInput input;
 
 	{
-		std::scoped_lock lock(player->input_mutex);
+		scoped_lock lock(player->input_mutex);
 		input = player->input;
 	}
 
@@ -160,6 +140,8 @@ void World::move(Player* player, float dt) {
 	PxVec3 dir(input.dir.x, 0, input.dir.y);
 
 	auto len = dir.normalize();
+	if (!len) dir = PxVec3(1, 0, 0);
+
 	PxVec3 side = dir.cross(PxVec3(0, 1, 0));
 
 	float ws = 0.f, ad = 0.f;
@@ -191,56 +173,102 @@ void World::move(Player* player, float dt) {
 	} else {
 		state.ground = false;
 	}
-
-	if (flags & PxControllerCollisionFlag::eCOLLISION_UP) {
-	}
-	if (flags & PxControllerCollisionFlag::eCOLLISION_SIDES) {
-	}
 }
 
 void World::destroy(Player* player) {
 	player->deferRemove();
 }
 
+static std::random_device rd;
+static std::mt19937 gen(rd());
+static std::uniform_real_distribution<float> dist(-10, 21);
+
+static uint16_t cubes = 0;
+
 void World::step(float dt, bool blocking) {
-	PxSceneWriteLock lock(*scene);
+	// Add cubes
+	{
+		PxSceneWriteLock sl(*scene);
+		scoped_lock ol(object_mutex);
 
-	scene->simulate(1 / 60.f); // ???
-	tick++;
+		if (cubes < 10000) {
+			for (auto i = 0; i < 25; i++) {
+				auto box = PxCreateDynamic(*physics, PxTransform(
+					PxVec3(dist(gen) * 2, 5.f, dist(gen) * 2)),
+					PxBoxGeometry(0.49f, 0.49f, 0.49f), *shared_mat, 5.0f);
+				box->setAngularDamping(0.2f);
+				box->setLinearVelocity(PxVec3(dist(gen), dist(gen) * 2 + 40.f, dist(gen)));
+				auto obj = addObject<PrimitiveObject, false>(box);
+				// printf("[world] Added cube[0x%p] #%u\n", obj, obj->id);
 
-	if (blocking) scene->fetchResults(true);
+				cubes++;
+			}
+		}
+	}
+
+	// Remove dead cubes
+	{
+		PxSceneReadLock sl(*scene);
+		scoped_lock ol(object_mutex);
+
+		for (auto& obj : objects) {
+			if (obj->isPlayer()) continue;
+
+			auto dynamic = obj->actor->is<PxRigidDynamic>();
+			if (!dynamic) continue;
+			if (dynamic->isSleeping()) {
+				if (obj->deferRemove()) {
+					// printf("[world] Removing cube[0x%p] #%u\n", obj, obj->id);
+					cubes--;
+				}
+			}
+		}
+	}
+
+	// Simulate
+	{
+		PxSceneWriteLock sl(*scene);
+		scene->simulate(1 / 60.f); // ???
+		tick++;
+	}
+
+	if (blocking) syncSim();
 }
 
 void World::gc() {
-	// Actual deallocation happens 1 tick after "gc", 
-	// so player onTick function can still have access to the "freed" object
-	for (auto& ptr : trashQ) delete ptr;
-	if (trashQ.size()) printf("Cleaned up %u objects\n", trashQ.size());
-	trashQ.clear();
 
 	scoped_lock ol(object_mutex);
+	// Actual deallocation happens 1 tick after "gc", 
+	// so player onTick function can still have access to the "freed" object
+	for (auto& ptr : trashQ) {
+		// Made sure this ID is not used immediated for the tick between remove & cleanup ((and not 0))
+		if (ptr->id) free_object_ids.push_back(ptr->id);
+		// printf("[world] Delete Obj[0x%p] #%u\n", ptr, ptr->id);
+		delete ptr;
+	}
+	trashQ.clear();
+
 	PxSceneWriteLock sl(*scene);
 
 	objects.erase(std::remove_if(objects.begin(), objects.end(), [&](GameObject*& obj) {
-		if (obj->removing) {
-
+		if (obj->removing.load()) {
 			// requires scene lock
 			if (obj->actor && obj->actor->isReleasable()) {
 				obj->actor->release();
 				obj->actor = nullptr;
 			}
 
-			// requires object lock
-			free_object_ids.push_back(obj->id);
 			used_obj_masks[obj->id] = 0;
 
 			// Push to trash queue to clean up in next tick
 			trashQ.push_back(obj);
+			// printf("[world] Trash Obj[0x%p] #%u\n", obj, obj->id);
 			return true;
 		} else return false;
 	}), objects.end());
 }
 
 void World::syncSim() {
+	PxSceneWriteLock sl(*scene);
 	scene->fetchResults(true);
 }
