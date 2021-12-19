@@ -16,23 +16,24 @@ HQUIC Registration;
 // QUIC layer settings.
 HQUIC Configuration;
 
-QUIC_STATUS ClientStreamCallback(HQUIC stream, void* self, QUIC_STREAM_EVENT* Event) {
+QUIC_STATUS ClientStreamCallback(HQUIC stream, void* self, QUIC_STREAM_EVENT* event) {
     auto client = static_cast<QuicClient*>(self);
 
-    switch (Event->Type) {
+    switch (event->Type) {
         case QUIC_STREAM_EVENT_START_COMPLETE:
             printf("[strm][%p] Stream started\n", stream);
             break;
         case QUIC_STREAM_EVENT_SEND_COMPLETE:
             // A previous StreamSend call has completed, and the context is being
             // returned back to the app.
-            delete static_cast<QuicClient::SendReq*>(Event->SEND_COMPLETE.ClientContext);
+            delete static_cast<QuicClient::SendReq*>(event->SEND_COMPLETE.ClientContext);
             // printf("[strm][%p] Data sent\n", stream);
             break;
         case QUIC_STREAM_EVENT_RECEIVE:
             // Data was received from the peer on the stream.
-            for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
-                client->recv(Event->RECEIVE.Buffers[i].Buffer, Event->RECEIVE.Buffers[i].Length);
+            for (uint32_t i = 0; i < event->RECEIVE.BufferCount; i++) {
+                client->received_bytes += event->RECEIVE.Buffers[i].Length;
+                client->recv(event->RECEIVE.Buffers[i].Buffer, event->RECEIVE.Buffers[i].Length);
             }
             break;
         case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
@@ -55,10 +56,10 @@ QUIC_STATUS ClientStreamCallback(HQUIC stream, void* self, QUIC_STREAM_EVENT* Ev
     return QUIC_STATUS_SUCCESS;
 }
 
-QUIC_STATUS ClientConnectionCallback(HQUIC conn, void* self, QUIC_CONNECTION_EVENT* Event) {
+QUIC_STATUS ClientConnectionCallback(HQUIC conn, void* self, QUIC_CONNECTION_EVENT* event) {
     auto client = static_cast<QuicClient*>(self);
 
-    switch (Event->Type) {
+    switch (event->Type) {
         case QUIC_CONNECTION_EVENT_CONNECTED:
             // The handshake has completed for the connection.
             printf("[conn][%p] Connected\n", conn);
@@ -68,47 +69,49 @@ QUIC_STATUS ClientConnectionCallback(HQUIC conn, void* self, QUIC_CONNECTION_EVE
             // The connection has been shut down by the transport. Generally, this
             // is the expected way for the connection to shut down with this
             // protocol, since we let idle timeout kill the connection.
-            if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status == QUIC_STATUS_CONNECTION_IDLE) {
+            if (event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status == QUIC_STATUS_CONNECTION_IDLE) {
                 printf("[conn][%p] Successfully shut down on idle.\n", conn);
             } else {
-                printf("[conn][%p] Shut down by transport, 0x%x\n", conn, Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
+                printf("[conn][%p] Shut down by transport, 0x%x\n", conn, event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
             }
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
             // The connection was explicitly shut down by the peer.
-            printf("[conn][%p] Shutdown by server, 0x%llu\n", conn, (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
+            printf("[conn][%p] Shutdown by server, 0x%llu\n", conn, (unsigned long long) event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
             // The connection has completed the shutdown process and is ready to be
             // safely cleaned up.
             printf("[conn][%p] Shutdown complete\n", conn);
-            if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
+            if (!event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
                 MsQuic->ConnectionClose(conn);
             }
             break;
         case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
             // A resumption ticket (also called New Session Ticket or NST) was
             // received from the server.
-            printf("[conn][%p] Resumption ticket received (%u bytes):\n", conn, Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
+            printf("[conn][%p] Resumption ticket received (%u bytes):\n", conn, event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
             // for (uint32_t i = 0; i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength; i++) {
             //    printf("%.2X", (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
             // }
-            printf("\n");
             break;
         case QUIC_CONNECTION_EVENT_STREAMS_AVAILABLE:
-            printf("Available stream count: bi = %u, uni = %u\n",
-                Event->STREAMS_AVAILABLE.BidirectionalCount,
-                Event->STREAMS_AVAILABLE.UnidirectionalCount);
+            printf("[conn][%p] Available stream count: bi = %u, uni = %u\n", conn,
+                event->STREAMS_AVAILABLE.BidirectionalCount,
+                event->STREAMS_AVAILABLE.UnidirectionalCount);
             break;
         case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
             // The server has created a new stream. The app MUST set the callback handler before returning.
-            printf("[strm][%p] Stream started by server \n", Event->PEER_STREAM_STARTED.Stream);
-            client->stream = Event->PEER_STREAM_STARTED.Stream;
-            MsQuic->SetCallbackHandler(Event->PEER_STREAM_STARTED.Stream, (void*) ClientStreamCallback, client);
+            printf("[strm][%p] Stream started by server \n", event->PEER_STREAM_STARTED.Stream);
+            client->stream = event->PEER_STREAM_STARTED.Stream;
+            MsQuic->SetCallbackHandler(event->PEER_STREAM_STARTED.Stream, (void*) ClientStreamCallback, client);
+            break;
+        case QUIC_CONNECTION_EVENT_DATAGRAM_STATE_CHANGED:
+            printf("[conn][%p] Datagram state changed: %u\n", conn, uint8_t(event->DATAGRAM_SEND_STATE_CHANGED.State));
             break;
         default:
             // TODO: anything else important to handle?
-            printf("[conn][%p] Unhandled Event: %u\n", conn, uint8_t(Event->Type));
+            printf("[conn][%p] Unhandled Event: %u\n", conn, uint8_t(event->Type));
             break;
     }
     return QUIC_STATUS_SUCCESS;
@@ -214,8 +217,9 @@ bool QuicClient::connect(string host, uint16_t port) {
 }
 
 void QuicClient::disconnect() {
-    if (stream) {
-        MsQuic->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_GRACEFUL, 0);
+    if (conn) {
+        MsQuic->ConnectionShutdown(conn, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+        conn = nullptr;
         stream = nullptr;
     };
     // TODO: what to do to the connection

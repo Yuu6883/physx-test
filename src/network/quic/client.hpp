@@ -16,7 +16,7 @@
 
 using std::string;
 
-class QuicClient : public LengthPrefix {
+class QuicClient : public MessageProtocol {
 	HQUIC conn;
 public:
 	struct SendReq {
@@ -35,8 +35,7 @@ public:
 	static int init(bool insecure);
 	static void cleanup();
 
-	QuicClient() : LengthPrefix(1024 * 1024), conn(nullptr), stream(nullptr) {};
-
+	QuicClient() : MessageProtocol(2 * 1024 * 1024, 5 * 1024 * 1024), conn(nullptr), stream(nullptr) {};
 	~QuicClient() { disconnect(); };
 
 	bool connect(string host, uint16_t port);

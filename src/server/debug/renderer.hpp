@@ -19,4 +19,5 @@ class ServerDebugRenderer : public BaseRenderer {
 public:
     ServerDebugRenderer(World* world);
     void render();
+    void postRender();
 };

@@ -99,3 +99,20 @@ void ServerDebugRenderer::render() {
 		renderActors(actors);
 	}
 }
+
+void ServerDebugRenderer::postRender() {
+	BaseRenderer::postRender();
+	if (!currentWorld) return;
+
+	{
+		std::stringstream stream;
+		stream << "Sim: " << roundf(currentWorld->timing.sim.load()) << "ms";
+		renderString(10, 40, 0, stream.str());
+	}
+
+	{
+		std::stringstream stream;
+		stream << "Update: " << roundf(currentWorld->timing.update.load()) << "ms";
+		renderString(10, 60, 0, stream.str());
+	}
+}

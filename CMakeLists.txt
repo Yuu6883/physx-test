@@ -69,12 +69,13 @@ if (WIN32)
     )
 else()
     set(PHYSX_LIBS
+        "PhysXCharacterKinematic_static_64"
         "PhysXExtensions_static_64"
         "PhysX_static_64"
         "PhysXPvdSDK_static_64"
-        "PhysXCharacterKinematic_static_64"
-        "PhysXCooking_static_64"
+        "PhysXVehicle_static_64"
         "PhysXCommon_static_64"
+        "PhysXCooking_static_64"
         "PhysXFoundation_static_64"
     )
 endif()
@@ -88,16 +89,16 @@ if (WIN32)
     find_package(msquic CONFIG REQUIRED)
 
     add_executable("server-gui" ${SRC_SERVER_FILES})
-    target_link_libraries("server-gui" ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv ${GLUT_LIBRARIES} msquic)
+    target_link_libraries("server-gui" ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv ${GLUT_LIBRARIES} msquic lz4)
 
     add_executable("client-gui" ${SRC_CLIENT_FILES})
-    target_link_libraries("client-gui" ${OPENGL_LIBRARIES} libuv ${GLUT_LIBRARIES} msquic)
+    target_link_libraries("client-gui" ${OPENGL_LIBRARIES} libuv ${GLUT_LIBRARIES} msquic lz4)
 
     add_executable("server-headless" ${SRC_HEADLESS_SERVER_FILES})
-    target_link_libraries("server-headless" ${PHYSX_LIBS} libuv msquic)
+    target_link_libraries("server-headless" ${PHYSX_LIBS} libuv msquic lz4)
         
     add_executable("client-headless" ${SRC_HEADLESS_CLIENT_FILES})
-    target_link_libraries("client-headless" msquic libuv)
+    target_link_libraries("client-headless" msquic libuv lz4)
 else()
     # set(OpenGL_GL_PREFERENCE LEGACY)
     # find_package(OpenGL REQUIRED)
@@ -106,8 +107,8 @@ else()
     # target_link_libraries("server-gui" ${PHYSX_LIBS} ${OPENGL_LIBRARIES} libuv glut msquic dl)
 
     add_executable("server-headless" ${SRC_HEADLESS_SERVER_FILES})
-    target_link_libraries("server-headless" ${PHYSX_LIBS} libuv msquic dl)
+    target_link_libraries("server-headless" ${PHYSX_LIBS} libuv msquic lz4 dl)
     
     add_executable("client-headless" ${SRC_HEADLESS_CLIENT_FILES})
-    target_link_libraries("client-headless" libuv msquic)
+    target_link_libraries("client-headless" libuv msquic lz4)
 endif()

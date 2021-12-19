@@ -99,17 +99,20 @@ class BaseRenderer {
     void ortho(int w, int h);
     void perspective();
 
-    void renderString(int x, int y, int space, void* font, string text);
     void renderAxes();
     void renderGrid(float size);
 
     static void timer(int value, void* self);
+
+protected:
+    void renderString(int x, int y, int space, string text, void* font = GLUT_BITMAP_HELVETICA_12);
 public:
     BaseRenderer(string name = "Base Renderer", BaseCamera* cam = nullptr);
     virtual ~BaseRenderer();
 
     virtual void loop();
     virtual void render() = 0;
+    virtual void postRender();
 
     static void cube(PxVec3 halfExtends);
     static void sphere(float radius);

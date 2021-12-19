@@ -33,6 +33,13 @@ void BaseClient::onData(string_view buffer) {
 	int64_t local = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 	// printf("%lu bytes | ping %li ms\n", buffer.size(), local - remote_now);
 
+	uint16_t playerSize = r.read<uint32_t>();
+
+	for (int i = 0; i < playerSize; i++) {
+		auto pid = r.read<uint32_t>();
+		auto state = r.read<PlayerState>();
+	}
+
 	uint64_t cacheSize = r.read<uint32_t>();
 	if (data.size() != cacheSize) {
 		printf("Cache size mismatch: %lu != %lu\n", data.size(), cacheSize);
@@ -63,7 +70,6 @@ void BaseClient::onData(string_view buffer) {
 			if (newFlags & OBJ_REMOVE) {
 				// By not incrementing write_id so it gets overwriten in next step in loop
 				obj.ctx->onRemove();
-				delete obj.ctx;
 				continue;
 			}
 
@@ -160,7 +166,7 @@ void BaseClient::onData(string_view buffer) {
 	// Strict integrity check
 	if (data.size() != expectedCacheSize || !r.eof() || error) {
 		printf("Data integrity check failed\n");
-		printf("data.size() = %u, expected = %u\n", data.size(), expectedCacheSize);
+		printf("data.size() = %lu, expected = %u\n", data.size(), expectedCacheSize);
 		printf("eof = %s\n", r.eof() ? "true" : "false");
 		printf("error = %s\n", error ? "true" : "false");
 		disconnect();

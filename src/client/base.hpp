@@ -20,10 +20,14 @@ class BaseClient : public QuicClient {
 	void onInput() {};
 
 	uint64_t last_packet;
+
 	mutex m;
 
 protected:
 	class NetworkedObject;
+
+	PlayerInput input;
+	PlayerState state;
 private:
 	struct NetworkData {
 		uint16_t type;
@@ -45,7 +49,7 @@ protected:
 		virtual void onSleep() {};
 		virtual void onAdd(const PxVec3& pos, const PxQuat& quat) {};
 		virtual void onUpdate(const PxVec3& pos, const PxQuat& quat) {};
-		virtual void onRemove() {};
+		virtual void onRemove() { delete this; };
 	};
 private:
 	// Compact data array

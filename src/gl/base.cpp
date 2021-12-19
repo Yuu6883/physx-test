@@ -63,6 +63,10 @@ BaseRenderer::BaseRenderer(string name, BaseCamera* cam) : name(name), cam(cam) 
 	setupState();
 }
 
+BaseRenderer::~BaseRenderer() {
+	if (cam) delete cam;
+}
+
 void BaseRenderer::timer(int value, void* self) {
 	if (glutGetWindow()) {
 		glutPostRedisplay();
@@ -132,10 +136,6 @@ void BaseRenderer::onRender() {
 	}
 	startTime = current;
 
-	std::stringstream stream;
-	stream << "FPS: " << std::fixed << std::setprecision(2) << fps;
-	auto fpsStr = stream.str();
-
 	for (auto& k : cam->downKeys) cam->onKey(k);
 
 	// Setup GL
@@ -166,8 +166,7 @@ void BaseRenderer::onRender() {
 	// Show the fps
 	ortho(windowW, windowH);
 	glColor3f(1, 1, 1);
-	renderString(10, 20, 0, GLUT_BITMAP_HELVETICA_12, fpsStr);
-	// renderString(10, 40, 0, GLUT_BITMAP_HELVETICA_12, tickStr);
+	postRender();
 
 	perspective();
 
@@ -192,7 +191,7 @@ void BaseRenderer::perspective() {
 	glMatrixMode(GL_MODELVIEW);
 }
 
-void BaseRenderer::renderString(int x, int y, int space, void* font, std::string text) {
+void BaseRenderer::renderString(int x, int y, int space, string text, void* font) {
 	for (int i = 0; i < text.length(); i++) {
 		glRasterPos2i(x, y);
 		glutBitmapCharacter(font, text.at(i));
@@ -212,7 +211,7 @@ void BaseRenderer::renderAxes() {
 
 	// Draw label			
 	glTranslatef(0, 0.0625, 0.225f);
-	renderString(0, 0, 0, GLUT_BITMAP_HELVETICA_10, "Z");
+	renderString(0, 0, 0, "Z");
 	glPopMatrix();
 	glutSolidCone(0.0225, 1, 4, 1);
 
@@ -224,7 +223,7 @@ void BaseRenderer::renderAxes() {
 
 	// Draw label
 	glTranslatef(0, 0.0625, 0.225f);
-	renderString(0, 0, 0, GLUT_BITMAP_HELVETICA_10, "X");
+	renderString(0, 0, 0, "X");
 	glPopMatrix();
 	glutSolidCone(0.0225, 1, 4, 1);
 
@@ -236,7 +235,7 @@ void BaseRenderer::renderAxes() {
 
 	// Draw label
 	glTranslatef(0, 0.0625, 0.225f);
-	renderString(0, 0, 0, GLUT_BITMAP_HELVETICA_10, "Y");
+	renderString(0, 0, 0, "Y");
 	glPopMatrix();
 	glutSolidCone(0.0225, 1, 4, 1);
 	glPopMatrix();
@@ -263,8 +262,10 @@ void BaseRenderer::loop() {
 	running = false;
 }
 
-BaseRenderer::~BaseRenderer() {
-	if (cam) delete cam;
+void BaseRenderer::postRender() {
+	std::stringstream stream;
+	stream << "FPS: " << std::fixed << std::setprecision(2) << fps;
+	renderString(10, 20, 0, stream.str());
 }
 
 void BaseRenderer::cube(PxVec3 halfExtents) {

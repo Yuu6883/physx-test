@@ -1,6 +1,7 @@
 #include "world.hpp"
 #include <thread>
 #include <random>
+#include <algorithm>
 
 using std::scoped_lock;
 
@@ -37,18 +38,48 @@ void World::cleanup() {
     foundation->release();
 }
 
+PxFilterFlags ContactReportFilterShader(
+	PxFilterObjectAttributes attr0, PxFilterData fd0,
+	PxFilterObjectAttributes attr1, PxFilterData fd1,
+	PxPairFlags& flags, const void*, PxU32) {
+
+	// let triggers through
+	if (PxFilterObjectIsTrigger(attr0) || PxFilterObjectIsTrigger(attr1)) {
+		flags = PxPairFlag::eTRIGGER_DEFAULT;
+		return PxFilterFlag::eDEFAULT;
+	}
+
+	flags = PxPairFlag::eCONTACT_DEFAULT | PxPairFlag::eNOTIFY_TOUCH_FOUND;
+	return PxFilterFlag::eDEFAULT;
+}
+
+void World::onContact(const PxContactPairHeader& pairHeader, const PxContactPair* pairs, PxU32 nbPairs) {
+	// printf("Contacting pairs: %u\n", nbPairs);
+	for (PxU32 i = 0; i < nbPairs; i++) {
+		contacting++;
+
+		auto& pair = pairs[i];
+		auto obj0 = static_cast<WorldObject*>(pair.shapes[0]->getActor()->userData);
+		auto obj1 = static_cast<WorldObject*>(pair.shapes[1]->getActor()->userData);
+	}
+}
+
 World::World() {
     PxSceneDesc sceneDesc(physics->getTolerancesScale());
 	sceneDesc.gravity = PxVec3(0.0f, -9.81f, 0.0f);
 
 	auto t = 4; // std::thread::hardware_concurrency();
 
-	printf("Using %u threads\n", t);
+	printf("[world] using %u threads\n", t);
 
 	dispatcher = PxDefaultCpuDispatcherCreate(t);
 	sceneDesc.flags = PxSceneFlag::eREQUIRE_RW_LOCK;
 	sceneDesc.cpuDispatcher = dispatcher;
-	sceneDesc.filterShader = PxDefaultSimulationFilterShader;
+	// Report kin-kin & static-kin contacts with be reported
+	sceneDesc.kineKineFilteringMode = PxPairFilteringMode::eKEEP; 
+	sceneDesc.staticKineFilteringMode = PxPairFilteringMode::eKEEP;
+	sceneDesc.simulationEventCallback = this;
+	sceneDesc.filterShader = ContactReportFilterShader;
 
 #ifdef PHYSX_USE_CUDA
 	PxCudaContextManagerDesc cudaContextManagerDesc;
@@ -93,8 +124,7 @@ uint16_t World::assignID() {
 }
 
 void World::initScene() {
-	auto ground = PxCreatePlane(*physics, PxPlane(0, 1, 0, 0), *shared_mat);
-	addObject<PrimitiveObject>(ground);
+	addObject<PrimitiveObject>(PxCreatePlane(*physics, PxPlane(0, 1, 0, 0), *shared_mat));
 }
 
 void World::spawn(Player* player) {
@@ -125,65 +155,91 @@ void World::spawn(Player* player) {
 		objects.push_back(player);
 	}
 
-	printf("Spawned player 0x%p\n", player);
-}
-
-void World::move(Player* player, float dt) {
-	PlayerInput input;
-
 	{
-		scoped_lock lock(player->input_mutex);
-		input = player->input;
+		scoped_lock lock(player_mutex);
+		players.push_back(player);
 	}
 
-	if (!input.dir.isFinite()) input.dir = PxZero;
-	PxVec3 dir(input.dir.x, 0, input.dir.y);
+	printf("[world] spawned player 0x%p\n", player);
+}
 
-	auto len = dir.normalize();
-	if (!len) dir = PxVec3(1, 0, 0);
+void World::updatePlayers(float dt) {
+	scoped_lock lock(player_mutex);
 
-	PxVec3 side = dir.cross(PxVec3(0, 1, 0));
+	for (auto& player : players) {
+		PlayerInput input; 
+		
+		{
+			scoped_lock lock(player->input_mutex);
+			input = player->input;
+		}
 
-	float ws = 0.f, ad = 0.f;
-	if (input.movL) ad = -1.f;
-	if (input.movR) ad = 1.f;
-	if (input.movB) ws = -1.f;
-	if (input.movF) ws = 1.f;
+		if (!input.dir.isFinite()) input.dir = PxZero;
+		PxVec3 dir(input.dir.x, 0, input.dir.y);
 
-	auto& state = player->state;
-	if (input.jump && !state.ground) state.velocity.y = 5.f;
+		auto len = dir.normalize();
+		if (!len) dir = PxVec3(1, 0, 0);
 
-	constexpr float moveSpeed = 2.5f;
-	PxVec3 movement = (ws * dir + ad * side).getNormalized() * moveSpeed;
+		PxVec3 side = dir.cross(PxVec3(0, 1, 0));
 
-	auto airTick = tick - state.lastGroundTick;
-	auto fallV = airTick * (1.f / 60) * -9.81f;
+		float ws = 0.f, ad = 0.f;
+		if (input.movL) ad = -1.f;
+		if (input.movR) ad = 1.f;
+		if (input.movB) ws = -1.f;
+		if (input.movF) ws = 1.f;
 
-	movement.y = player->state.velocity.y + fallV;
+		auto& state = player->state;
+		if (input.jump && !state.ground) state.velocity.y = 5.f;
 
-	static const PxControllerFilters ctFilters(0);
+		constexpr float moveSpeed = 2.5f;
+		PxVec3 movement = (ws * dir + ad * side).getNormalized() * moveSpeed;
 
-	PxSceneWriteLock lock(*scene);
-	auto flags = player->ct->move(movement * dt, 0.f, dt, ctFilters);
+		auto airTick = tick - state.lastGroundTick;
+		auto fallV = airTick * (1.f / 60) * -9.81f;
 
-	if (flags & PxControllerCollisionFlag::eCOLLISION_DOWN) {
-		state.ground = true;
-		state.velocity.y = 0;
-		state.lastGroundTick = tick;
-	} else {
-		state.ground = false;
+		movement.y = player->state.velocity.y + fallV;
+
+		static const PxControllerFilters ctFilters(0);
+
+		PxSceneWriteLock lock(*scene);
+		auto flags = player->ct->move(movement * dt, 0.f, dt, ctFilters);
+
+		auto pos = player->ct->getPosition();
+		state.position = PxVec3(pos.x, pos.y, pos.z);
+
+		if (flags & PxControllerCollisionFlag::eCOLLISION_DOWN) {
+			state.ground = true;
+			state.velocity.y = 0;
+			state.lastGroundTick = tick;
+		} else {
+			state.ground = false;
+		}
+	}
+}
+
+void World::updateNet(float) {
+	scoped_lock pl(player_mutex);
+
+	for (auto& player : players) {
+		PxSceneReadLock sl(*scene);
+		player->updateState(this);
 	}
 }
 
 void World::destroy(Player* player) {
-	player->deferRemove();
+	player->release();
+
+	scoped_lock lock(player_mutex);
+	players.remove(player);
+
+	printf("[world] destroyed player 0x%p\n", player);
 }
 
 static std::random_device rd;
 static std::mt19937 gen(rd());
-static std::uniform_real_distribution<float> dist(-10, 21);
+static std::uniform_real_distribution<float> dist(-15, 15);
 
-static uint16_t cubes = 0;
+static uint16_t objCount = 0;
 
 void World::step(float dt, bool blocking) {
 	// Add cubes
@@ -191,17 +247,20 @@ void World::step(float dt, bool blocking) {
 		PxSceneWriteLock sl(*scene);
 		scoped_lock ol(object_mutex);
 
-		if (cubes < 10000) {
-			for (auto i = 0; i < 25; i++) {
+		constexpr uint16_t TOTAL_OBJ = 5000;
+
+		if (objCount < TOTAL_OBJ) {
+			for (auto i = 0; i < std::max(1, TOTAL_OBJ / 200); i++) {
 				auto box = PxCreateDynamic(*physics, PxTransform(
 					PxVec3(dist(gen) * 2, 5.f, dist(gen) * 2)),
 					PxBoxGeometry(0.49f, 0.49f, 0.49f), *shared_mat, 5.0f);
 				box->setAngularDamping(0.2f);
 				box->setLinearVelocity(PxVec3(dist(gen), dist(gen) * 2 + 40.f, dist(gen)));
-				auto obj = addObject<PrimitiveObject, false>(box);
-				// printf("[world] Added cube[0x%p] #%u\n", obj, obj->id);
+				box->setMaxLinearVelocity(50.f);
 
-				cubes++;
+				auto obj = addObject<PrimitiveObject, false>(box);
+
+				objCount++;
 			}
 		}
 	}
@@ -217,10 +276,7 @@ void World::step(float dt, bool blocking) {
 			auto dynamic = obj->actor->is<PxRigidDynamic>();
 			if (!dynamic) continue;
 			if (dynamic->isSleeping()) {
-				if (obj->deferRemove()) {
-					// printf("[world] Removing cube[0x%p] #%u\n", obj, obj->id);
-					cubes--;
-				}
+				if (obj->release()) objCount--;
 			}
 		}
 	}
@@ -243,15 +299,14 @@ void World::gc() {
 	for (auto& ptr : trashQ) {
 		// Made sure this ID is not used immediated for the tick between remove & cleanup ((and not 0))
 		if (ptr->id) free_object_ids.push_back(ptr->id);
-		// printf("[world] Delete Obj[0x%p] #%u\n", ptr, ptr->id);
 		delete ptr;
 	}
 	trashQ.clear();
 
 	PxSceneWriteLock sl(*scene);
 
-	objects.erase(std::remove_if(objects.begin(), objects.end(), [&](GameObject*& obj) {
-		if (obj->removing.load()) {
+	objects.erase(std::remove_if(objects.begin(), objects.end(), [&](WorldObject*& obj) {
+		if (obj->released.load()) {
 			// requires scene lock
 			if (obj->actor && obj->actor->isReleasable()) {
 				obj->actor->release();
@@ -262,7 +317,6 @@ void World::gc() {
 
 			// Push to trash queue to clean up in next tick
 			trashQ.push_back(obj);
-			// printf("[world] Trash Obj[0x%p] #%u\n", obj, obj->id);
 			return true;
 		} else return false;
 	}), objects.end());
@@ -271,4 +325,7 @@ void World::gc() {
 void World::syncSim() {
 	PxSceneWriteLock sl(*scene);
 	scene->fetchResults(true);
+
+	// printf("%lu contacting pairs\n", contacting.load());
+	contacting = 0;
 }

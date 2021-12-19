@@ -45,6 +45,7 @@ QUIC_STATUS ServerStreamCallback(HQUIC stream, void* ptr, QUIC_STREAM_EVENT* Eve
             // Data was received from the peer on the stream.
             for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
                 auto& buf = Event->RECEIVE.Buffers[i];
+                ctx->received_bytes += buf.Length;
                 ctx->recv(buf.Buffer, buf.Length);
             }
             break;
@@ -70,10 +71,10 @@ QUIC_STATUS ServerStreamCallback(HQUIC stream, void* ptr, QUIC_STREAM_EVENT* Eve
     return QUIC_STATUS_SUCCESS;
 }
 
-QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVENT* Event) {
+QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVENT* event) {
     auto ctx = static_cast<QuicServer::Connection*>(ptr);
 
-    switch (Event->Type) {
+    switch (event->Type) {
         case QUIC_CONNECTION_EVENT_CONNECTED: {
             // The handshake has completed for the connection.
 
@@ -106,10 +107,10 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
             // is the expected way for the connection to shut down with this
             // protocol, since we let idle timeout kill the connection.
 
-            if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status == QUIC_STATUS_CONNECTION_IDLE) {
+            if (event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status == QUIC_STATUS_CONNECTION_IDLE) {
                 printf("[conn][%p] Client shutdown on idle.\n", conn);
             } else {
-                printf("[conn][%p] Shut down by transport, 0x%x\n", conn, Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
+                printf("[conn][%p] Shut down by transport, 0x%x\n", conn, event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
             }
             break;
 
@@ -117,7 +118,7 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
 
             // The connection was explicitly shut down by the client.
 
-            printf("[conn][%p] Client shutdown by client, 0x%llu\n", conn, (unsigned long long) Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
+            printf("[conn][%p] Client shutdown by client, 0x%llu\n", conn, (unsigned long long) event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
             break;
 
         case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE: {
@@ -137,7 +138,7 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
 
             // The client has created a new stream. The app MUST set the callback handler before returning.
 
-            printf("[strm][%p] Stream started by client\n", Event->PEER_STREAM_STARTED.Stream);
+            printf("[strm][%p] Stream started by client\n", event->PEER_STREAM_STARTED.Stream);
             // MsQuic->SetCallbackHandler(Event->PEER_STREAM_STARTED.Stream, ServerStreamCallback, NULL);
             break;
 
@@ -149,9 +150,13 @@ QUIC_STATUS ServerConnectionCallback(HQUIC conn, void* ptr, QUIC_CONNECTION_EVEN
 
             printf("[conn][%p] Connection resumed!\n", conn);
             break;
+        case QUIC_CONNECTION_EVENT_IDEAL_PROCESSOR_CHANGED:
+            // What does this mean??
+            printf("[conn][%p] Ideal processor changed to %u\n", conn, event->IDEAL_PROCESSOR_CHANGED.IdealProcessor);
+            break;
         default:
             // TODO: anything else important to handle?
-            printf("[conn][%p] Unhandled Event: %u\n", conn, uint8_t(Event->Type));
+            printf("[conn][%p] Unhandled Event: %u\n", conn, uint8_t(event->Type));
             break;
     }
 
@@ -270,7 +275,7 @@ bool QuicServer::listen(uint16_t port) {
         return false;
     }
 
-    printf("Server listening on port: %u\n", port);
+    printf("[server] open on port: %u\n", port);
     return true;
 };
 
@@ -283,29 +288,6 @@ bool QuicServer::stop() {
     } else return false;
 }
 
-void QuicServer::Connection::send(string_view buffer, bool freeAfterSend) {
-    auto buffers = new QUIC_BUFFER[2];
-
-    // Length prefix buffer
-    buffers[0].Buffer = (uint8_t*) new uint64_t(buffer.size());
-    buffers[0].Length = sizeof(uint64_t);
-
-    buffers[1].Buffer = (uint8_t*) buffer.data();
-    buffers[1].Length = buffer.size();
-
-    auto req = new BroadcastReq();
-
-    req->ref = 1;
-    req->len = 2;
-    req->buffers = buffers;
-    req->freeAfterSend = freeAfterSend;
-
-    auto status = MsQuic->StreamSend(stream, buffers, 2, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
-
-    // printf("Sending %lu bytes to client\n", buffer.size());
-    if (QUIC_FAILED(status)) delete req;
-}
-
 void QuicServer::Connection::disconnect() {
     if (!stream && !conn) return;
 
@@ -316,38 +298,25 @@ void QuicServer::Connection::disconnect() {
     conn = nullptr;
 }
 
-void QuicServer::broadcast(string_view buffer, bool freeAfterSend) {
-    m.lock();
+void QuicServer::Connection::send(string_view buffer, bool freeAfterSend, uint8_t compressionMethod) {
+    auto req = new SendReq(buffer, 1, freeAfterSend, compressionMethod);
+    auto status = MsQuic->StreamSend(stream, req->buffers, 2, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
+    if (QUIC_FAILED(status)) delete req;
+}
 
-    if (!connections.size()) {
-        m.unlock();
-        return;
-    }
+void QuicServer::broadcast(string_view buffer, bool freeAfterSend, bool compress) {
+    std::scoped_lock lock(m);
+    if (!connections.size()) return;
 
-    auto buffers = new QUIC_BUFFER[2];
-
-    // Length prefix buffer
-    buffers[0].Buffer = (uint8_t*) new uint64_t(buffer.size());
-    buffers[0].Length = sizeof(uint64_t);
-
-    buffers[1].Buffer = (uint8_t*) buffer.data();
-    buffers[1].Length = buffer.size();
-
-    auto req = new BroadcastReq();
-    req->ref = (uint32_t) connections.size();
-    req->len = 2;
-    req->buffers = buffers;
-    req->freeAfterSend = freeAfterSend;
+    auto req = new SendReq(buffer, uint32_t(connections.size()), freeAfterSend, compress);
 
     for (auto ctx : connections) {
-        auto status = MsQuic->StreamSend(ctx->stream, buffers, 2, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
+        auto status = MsQuic->StreamSend(ctx->stream, req->buffers, 2, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
         if (QUIC_FAILED(status)) {
             req->ref--;
             printf("Failed to send???\n");
         }
     }
-
-    m.unlock();
 }
 
 void QuicServer::cleanup() {

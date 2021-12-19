@@ -27,13 +27,13 @@ using std::atomic;
 class QuicServer {
 public:
 
-	class Connection : public LengthPrefix {
+	class Connection : public MessageProtocol {
 	public:
 		QuicServer* server = nullptr; // terrible design but no other way around ):
 		HQUIC conn = nullptr;
 		HQUIC stream = nullptr; // can be list of streams
 
-		Connection() : LengthPrefix(1024) {};
+		Connection() : MessageProtocol(1024) {};
 
 		virtual ~Connection() {};
 
@@ -42,27 +42,33 @@ public:
 		virtual void onData(string_view buffer) {};
 		virtual void onDisconnect() {};
 
-		void send(string_view buffer, bool freeAfterSend);
+		void send(string_view buffer, bool freeAfterSend, uint8_t compressionMethod = COMP_NONE);
 		void disconnect();
 	};
 
 	struct RefCounter {
 		atomic<uint32_t> ref;
+		RefCounter(uint32_t ref) : ref(ref) {};
 		virtual ~RefCounter() {};
 	};
 
-	struct BroadcastReq : RefCounter {
-		uint32_t len;
-		QUIC_BUFFER* buffers;
+	struct SendReq : RefCounter {
 		bool freeAfterSend;
-		~BroadcastReq() {
-			// [0] is always length prefix buffer
-			free(buffers[0].Buffer);
+		QUIC_BUFFER buffers[2];
+		uint64_t header;
 
-			if (freeAfterSend) {
-				for (uint32_t i = 1; i < len; i++) free(buffers[i].Buffer);
-			}
-			delete[] buffers;
+		SendReq(string_view buf, uint32_t ref, bool freeAfterSend, uint8_t compress) : 
+			RefCounter(ref), freeAfterSend(freeAfterSend) {
+
+			header = buf.size() | (uint64_t(compress) << (64 - COMP_PROFILE_BITS));
+			buffers[0].Buffer = (uint8_t*) &header;
+			buffers[0].Length = sizeof(uint64_t);
+			buffers[1].Buffer = (uint8_t*) buf.data();
+			buffers[1].Length = buf.size();
+		}
+
+		~SendReq() {
+			if (freeAfterSend) free(buffers[1].Buffer);
 		}
 	};
 
@@ -76,10 +82,10 @@ public:
 		m.unlock();
 	}
 
-	template<typename SyncCallback>
+	template<typename T, typename SyncCallback>
 	inline void syncPerConn(const SyncCallback& cb) {
 		m.lock();
-		for (auto& conn : connections) cb(conn);
+		for (auto& conn : connections) cb((T*&) conn);
 		m.unlock();
 	}
 
@@ -93,7 +99,7 @@ public:
 	bool listen(uint16_t port);
 	bool stop();
 
-	void broadcast(string_view buffer, bool freeAfterSend);
+	void broadcast(string_view buffer, bool freeAfterSend, bool compress);
 	virtual Connection* client() { return new Connection(); };
 
 	static int init();

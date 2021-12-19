@@ -1,9 +1,11 @@
 #pragma once
 
 #include <map>
+#include <mutex>
 #include <vector>
 #include <chrono>
 #include <bitset>
+#include <unordered_map>
 #include <uv.h>
 
 #include <PxPhysicsAPI.h>
@@ -13,9 +15,11 @@
 #include "../world/world.hpp"
 #include "../network/quic/server.hpp"
 
+using std::mutex;
 using std::vector;
 using std::bitset;
 using std::scoped_lock;
+using std::unordered_map;
 using namespace std::chrono;
 
 class PhysXServer : public QuicServer {
@@ -30,17 +34,11 @@ class PhysXServer : public QuicServer {
 
 	uv_timer_t tick_timer;
 
-	void broadcastState();
-
-	struct {
-		float compression;
-	} timing;
-
 	class Handle : public Connection, Player {
 		friend PhysXServer;
 
 		struct CacheItem {
-			GameObject* obj;
+			WorldObject* obj;
 			uint32_t flags;
 			PxVec3 pos;
 		};
@@ -51,25 +49,31 @@ class PhysXServer : public QuicServer {
 		static const size_t cache_size = sizeof(CacheItem);
 
 		// Implemented in network/protocol/server-tick.cpp
-		virtual void onTick(bitset<65536>& masks, vector<GameObject*>& objects);
+		virtual void updateState(World* world);
 
 		virtual void onConnect();
 		virtual void onData(string_view buffer);
 		virtual void onDisconnect();
 
-		virtual void move(float dt);
 		PhysXServer* getServer() { return static_cast<PhysXServer*>(server);  };
 		World* getWorld() { return getServer()->world; }
 	};
 
 	static void tick_timer_cb(uv_timer_t* handle);
+
+	mutex handle_mutex;
+	unordered_map<uint32_t, Handle*> allHandles;
 public:
-	World* world;
+	World* world; // TODO: multi world
 
 	PhysXServer(uv_loop_t* loop = uv_default_loop());
 	~PhysXServer();
 
 	void run(uint64_t tickInterval, uint64_t netInterval);
 	void tick(uint64_t now, float realDelay);
+
+	void addHandle(Handle* handle);
+	void removeHandle(Handle* handle);
+
 	Connection* client() { return new Handle(); };
 };

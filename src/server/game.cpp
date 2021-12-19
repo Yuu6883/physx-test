@@ -3,7 +3,7 @@
 using std::scoped_lock;
 
 PhysXServer::PhysXServer(uv_loop_t* loop) : QuicServer(), loop(loop), 
-	world(new World()), running(false), timing({ 0.f }) {
+	world(new World()), running(false) {
 
 	uv_timer_init(loop, &tick_timer);
 	tick_timer.data = this;
@@ -46,7 +46,7 @@ void PhysXServer::run(uint64_t msTickInterval, uint64_t msNetInterval) {
 	last_net = uv_hrtime();
 	last_tick = uv_hrtime();
 
-	printf("Tick: %lums, Net: %lums\n", msTickInterval, msNetInterval);
+	printf("[game] tick: %lums, net: %lums\n", msTickInterval, msNetInterval);
 	uv_timer_start(&tick_timer, PhysXServer::tick_timer_cb, 0, 0);
 
 	uv_run(loop, UV_RUN_DEFAULT);
@@ -55,55 +55,58 @@ void PhysXServer::run(uint64_t msTickInterval, uint64_t msNetInterval) {
 void PhysXServer::tick(uint64_t now, float realDelay) {
 	if (!world) return;
 
-	float delaySec = realDelay * 0.001f;
-	syncPerConn([this, delaySec](auto& conn) {
-		static_cast<Handle*>(conn)->move(delaySec);
-	});
+	world->updatePlayers(realDelay * 0.001f);
 
+	auto start = high_resolution_clock::now();
 	world->step(tickIntervalNano / 1000000000.f, false);
 
 	if (now > last_net + netIntervalNano) {
 		last_net = last_net + netIntervalNano;
 
-		broadcastState();
+		world->updateNet(realDelay);
+		world->syncSim();
+		world->gc();
+		world->timing.update.store(duration<float, std::milli>(high_resolution_clock::now() - start).count());
 	}
+	else {
+		world->syncSim();
+	}
+	
+	world->timing.sim.store(duration<float, std::milli>(high_resolution_clock::now() - start).count());
 
-	world->syncSim();
+	// printf("Sim    : %4.4fms\n", world->timing.sim);
+	// printf("Update : %4.4fms\n", world->timing.update);
+	// printf("Objects: %u\n", world->objects->size());
 }
 
-void PhysXServer::broadcastState() {
-	if (!world) return;
-	auto scene = world->getScene();
-	if (!scene) return;
 
-	auto start = high_resolution_clock::now();
+void PhysXServer::addHandle(Handle* handle) {
+	scoped_lock lock(handle_mutex);
+	uint32_t i = 1;
+	while (allHandles.find(i) != allHandles.end()) i++;
+	handle->pid = i;
+	allHandles.insert({ i, handle });
 
-	{
-		PxSceneReadLock lock(*scene);
-		syncPerConn([&](auto& conn) {
-			static_cast<Handle*>(conn)->onTick(world->used_obj_masks, world->objects);
-		});
-	}
+	printf("[server] added handle#%u\n", handle->pid);
+}
 
-	auto dt = high_resolution_clock::now() - start;
-	timing.compression = duration<float, std::milli>(dt).count();
+void PhysXServer::removeHandle(Handle* handle) {
+	scoped_lock lock(handle_mutex);
+	allHandles.erase(handle->pid);
 
-	// printf("Compression: %4.4fms\n", timing.compression);
-	// printf("Objects : %u\n", world->objects->size());
-	world->gc();
+	printf("[server] removed handle#%u\n", handle->pid);
 }
 
 void PhysXServer::Handle::onConnect() {
+	getServer()->addHandle(this);
+
 	scoped_lock lock(world_mutex);
 	getWorld()->spawn(this);
 }
 
-void PhysXServer::Handle::move(float dt) {
-	scoped_lock lock(world_mutex);
-	getWorld()->move(this, dt);
-}
-
 void PhysXServer::Handle::onDisconnect() {
+	getServer()->removeHandle(this);
+
 	scoped_lock lock(world_mutex);
 	getWorld()->destroy(this);
 }

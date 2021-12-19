@@ -1,4 +1,6 @@
+#include <sstream>
 #include <uv.h>
+
 #include "gui.hpp"
 
 void GUIClient::Cube::render() {
@@ -60,6 +62,28 @@ void GUIClient::render() {
 			glPopMatrix();
 		}
 	});
+
+	auto dt = duration<float, std::milli>(system_clock::now() - lastBandwidthUpdate).count();
+	if (dt > 1000.f) {
+		lastBandwidthUpdate += milliseconds{ 1000 };
+
+		bandwidth = received_bytes.load() - lastTotalBytes;
+		lastTotalBytes = received_bytes.load();
+	}
+}
+
+void GUIClient::postRender() {
+	BaseRenderer::postRender();
+
+	std::stringstream stream;
+	stream << "Bandwidth: ";
+	if (bandwidth < 1024) stream << bandwidth << "B/S";
+	else {
+		stream.precision(3);
+		if (bandwidth < 2 * 1024 * 1024) stream << (bandwidth / 1024.f) << "KB/s";
+		else stream << (bandwidth / 1024.f / 1024.f) << "MB/s";
+	}
+	renderString(10, 40, 0, stream.str());
 }
 
 GUIClient::NetworkedObject* GUIClient::addObj(uint16_t type, uint16_t state, uint16_t flags, Reader& r) {

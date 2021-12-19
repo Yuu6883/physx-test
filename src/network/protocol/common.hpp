@@ -7,7 +7,7 @@
 using namespace physx;
 
 // Flags
-constexpr uint8_t PROTO_VER[3] = { 0, 0, 2 };
+constexpr uint8_t PROTO_VER[3] = { 0, 0, 3 };
 
 constexpr uint8_t ADD_OBJ_ST = 0 << 6;
 constexpr uint8_t ADD_OBJ_DY = 1 << 6;
@@ -31,8 +31,9 @@ constexpr uint8_t UNK_T = 63;
 struct PlayerState {
 	bool ground : 1;
 	uint64_t lastGroundTick;
+	PxVec3 position;
 	PxVec3 velocity;
-	PlayerState() : ground(false), lastGroundTick(0), velocity(PxZero) {};
+	PlayerState() : ground(false), lastGroundTick(0), position(PxZero), velocity(PxZero) {};
 };
 
 struct PlayerInput {

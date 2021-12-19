@@ -6,6 +6,7 @@
 #include <extensions/PxExtensionsAPI.h>
 #include <common/PxTolerancesScale.h>
 
+#include <list>
 #include <atomic>
 #include <vector>
 #include <mutex>
@@ -13,6 +14,8 @@
 #include "../network/protocol/common.hpp"
 
 using namespace physx;
+
+using std::list;
 using std::mutex;
 using std::vector;
 using std::bitset;
@@ -20,34 +23,37 @@ using std::atomic;
 using std::scoped_lock;
 
 class PhysXServer;
+class World;
 
-struct GameObject {
-    atomic<bool> removing;
+struct WorldObject {
+    atomic<bool> released;
     uint16_t id;
     PxRigidActor* actor;
 
     virtual bool isPrimitive() = 0;
     virtual bool isPlayer() = 0;
 
-    bool deferRemove() { 
+    bool release() { 
         bool expected = false;
-        return removing.compare_exchange_weak(expected, true);
+        return released.compare_exchange_weak(expected, true);
     }
 
-    GameObject(uint16_t id) : id(id), actor(nullptr), removing(false) {};
-    GameObject(uint16_t id, PxRigidActor* actor) : id(id), actor(actor), removing(false) {
+    WorldObject(uint16_t id) : id(id), actor(nullptr), released(false) {};
+    WorldObject(uint16_t id, PxRigidActor* actor) : id(id), actor(actor), released(false) {
         actor->userData = this;
     }
-    virtual ~GameObject() {};
+    virtual ~WorldObject() {};
 };
 
-struct PrimitiveObject : GameObject {
+struct PrimitiveObject : WorldObject {
     virtual bool isPrimitive() { return true; };
     virtual bool isPlayer() { return false; };
-    PrimitiveObject(uint16_t id, PxRigidActor* actor) : GameObject(id, actor) {};
+    PrimitiveObject(uint16_t id, PxRigidActor* actor) : WorldObject(id, actor) {};
 };
 
-struct Player : GameObject {
+struct Player : WorldObject {
+    uint32_t pid = 0;
+
     mutex world_mutex;
     mutex input_mutex;
 
@@ -55,36 +61,57 @@ struct Player : GameObject {
     PlayerState state;
     PxController* ct;
 
-    virtual bool isPrimitive() { return false; };
-    virtual bool isPlayer() { return true; };
+    bool isPrimitive() { return false; };
+    bool isPlayer() { return true; };
 
-    virtual void remove() {
+    void remove() {
         scoped_lock lock(world_mutex);
         ct->release();
+        ct = nullptr;
     }
 
     // Need to be called from the world thread
-    virtual void move(float dt) {};
-    Player() : GameObject(0), ct(nullptr) {};
+    virtual void updateState(World* world) = 0;
+
+    Player() : WorldObject(0), ct(nullptr) {};
 };
 
-class World {
+class World : public PxSimulationEventCallback {
     friend PhysXServer;
 
     PxDefaultCpuDispatcher* dispatcher;
     PxScene* scene;
     PxControllerManager* ctm;
     
+    uint32_t id = 0;
     uint64_t tick = 0;
+
+    mutex player_mutex;
     mutex object_mutex;
-    vector<GameObject*> objects;
-    vector<GameObject*> trashQ;
+
+    list<Player*> players;
+    vector<WorldObject*> objects;
+    vector<WorldObject*> trashQ;
+
     vector<uint16_t> free_object_ids;
     bitset<65536> used_obj_masks;
 
     PxMaterial* shared_mat;
 
+    atomic<uint64_t> contacting = 0;
+
+    void onConstraintBreak(PxConstraintInfo* , PxU32) override {}
+    void onWake(PxActor**, PxU32) override {}
+    void onSleep(PxActor**, PxU32) override {}
+    void onTrigger(PxTriggerPair*, PxU32) override {}
+    void onAdvance(const PxRigidBody* const*, const PxTransform*, const PxU32) override {}
+    void onContact(const PxContactPairHeader& pairHeader, const PxContactPair* pairs, PxU32 nbPairs) override;
 public:
+    struct {
+        atomic<float> update = 0.f;
+        atomic<float> sim = 0.f;
+    } timing;
+
     static int init();
     static void cleanup();
 
@@ -120,8 +147,10 @@ public:
     }
 
     void spawn(Player* player);
-    void move(Player* player, float dt);
     void destroy(Player* player);
+
+    void updateNet(float dt);
+    void updatePlayers(float dt);
 
     void gc();
     void step(float dt, bool blocking = true);

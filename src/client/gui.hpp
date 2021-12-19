@@ -1,9 +1,18 @@
 #pragma once
 
+#include <chrono>
+
 #include "base.hpp"
 #include "../gl/base.hpp"
 
+using namespace std::chrono;
+
 class GUIClient : public BaseClient, public BaseRenderer {
+
+	system_clock::time_point lastBandwidthUpdate = system_clock::now();
+	uint64_t lastTotalBytes = 0;
+	uint64_t bandwidth = 0;
+
 	class RenderableObject : public NetworkedObject {
 		bool sleeping = false;
 
@@ -110,6 +119,7 @@ class GUIClient : public BaseClient, public BaseRenderer {
 	};
 
 	virtual void render();
+	virtual void postRender();
 	virtual NetworkedObject* addObj(uint16_t type, uint16_t state, uint16_t flags, Reader& r);
 
 public:

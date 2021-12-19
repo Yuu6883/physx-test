@@ -15,7 +15,11 @@ void PhysXServer::Handle::onData(string_view buffer) {
 	r.read<PlayerInput>(input);
 }
 
-void PhysXServer::Handle::onTick(bitset<65536>& masks, vector<GameObject*>& curr) {
+void PhysXServer::Handle::updateState(World* world) {
+	auto& players = world->players;
+	auto& curr = world->objects;
+	auto& masks = world->used_obj_masks;
+
 	Writer w;
 
 	w.write<uint8_t>(PROTO_VER[0]);
@@ -25,8 +29,19 @@ void PhysXServer::Handle::onTick(bitset<65536>& masks, vector<GameObject*>& curr
 	int64_t timestamp = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 	w.write<int64_t>(timestamp);
 
-	uint32_t cacheSize = cache.size();
+	w.write<uint32_t>(players.size());
 
+	w.write<uint32_t>(pid);
+	w.write<PlayerState>(state);
+
+	for (auto& p : players) {
+		if (p == this) continue;
+
+		w.write<uint32_t>(p->pid);
+		w.write<PlayerState>(p->state);
+	}
+
+	uint32_t cacheSize = cache.size();
 	w.write<uint32_t>(cacheSize);
 
 	PxShape* shape = nullptr;
@@ -158,9 +173,14 @@ void PhysXServer::Handle::onTick(bitset<65536>& masks, vector<GameObject*>& curr
 	}
 
 	w.write<uint32_t>(cache.size());
-	auto buf = w.finalize();
 
-	// printf("Buffer size: %u\n", buf.size());
+	auto og = w.offset();
 
-	send(buf, true);
+	auto start = high_resolution_clock::now();
+	auto buf = w.lz4();
+	auto dt = duration<float, std::milli>(high_resolution_clock::now() - start).count();
+
+	// LZ4 95%-99% but only takes ~0.05-0.07ms
+	// printf("Compression rate: %.2f%%, dt = %.10f\n", 100.f * buf.size() / og, dt);
+	send(buf, true, COMP_LZ4);
 }
