@@ -25,9 +25,7 @@ static float CylinderData[] = {
 	1.0f,0.0f,1.0f,1.0f,0.0f,1.0f,1.0f,0.0f,0.0f,1.0f,0.0f,0.0f
 };
 
-BaseRenderer::BaseRenderer(string name, BaseCamera* cam) : name(name), cam(cam) {
-	if (!cam) this->cam = new BaseCamera(PxVec3(25.f), PxVec3(-1.f));
-
+BaseRenderer::BaseRenderer(string name) : name(name) {
 	glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
 	glutInitWindowSize(1280, 720);
@@ -52,20 +50,34 @@ BaseRenderer::BaseRenderer(string name, BaseCamera* cam) : name(name), cam(cam) 
 		static_cast<BaseRenderer*>(self)->onMouseMove(x, y);
 	}, this);
 
+	glutPassiveMotionFuncUcall([](int x, int y, void* self) {
+		static_cast<BaseRenderer*>(self)->onMouseMove(x, y);
+	}, this);
+
 	glutKeyboardFuncUcall([](unsigned char key, int, int, void* self) {
+		static_cast<BaseRenderer*>(self)->downKeys.insert(key);
 		static_cast<BaseRenderer*>(self)->onKeyDown(key);
 	}, this);
 
 	glutKeyboardUpFuncUcall([](unsigned char key, int, int, void* self) {
+		static_cast<BaseRenderer*>(self)->downKeys.erase(key);
 		static_cast<BaseRenderer*>(self)->onKeyUp(key);
+	}, this);
+
+	glutSpecialFuncUcall([](int key, int, int, void* self) {
+		static_cast<BaseRenderer*>(self)->downSpecialKeys.insert(key);
+		static_cast<BaseRenderer*>(self)->onSpecialKeyDown(key);
+	}, this);
+
+	glutSpecialUpFuncUcall([](int key, int, int, void* self) {
+		static_cast<BaseRenderer*>(self)->downSpecialKeys.erase(key);
+		static_cast<BaseRenderer*>(self)->onSpecialKeyUp(key);
 	}, this);
 
 	setupState();
 }
 
-BaseRenderer::~BaseRenderer() {
-	if (cam) delete cam;
-}
+BaseRenderer::~BaseRenderer() {}
 
 void BaseRenderer::timer(int value, void* self) {
 	if (glutGetWindow()) {
@@ -96,21 +108,11 @@ void BaseRenderer::setupState() {
 }
 
 void BaseRenderer::onMouseButton(int button, int mode, int x, int y) {
-	cam->mouseMode = mode;
-	cam->mouseX = x;
-	cam->mouseY = y;
+	cam()->onMouseButton(button, mode, x, y);
 }
 
 void BaseRenderer::onMouseMove(int x, int y) {
-	cam->onMouseMove(x, y);
-}
-
-void BaseRenderer::onKeyDown(unsigned char key) {
-	cam->downKeys.insert(key);
-}
-
-void BaseRenderer::onKeyUp(unsigned char key) {
-	cam->downKeys.erase(key);
+	cam()->onMouseMove(x, y);
 }
 
 void BaseRenderer::onResize(int w, int h) {
@@ -136,7 +138,13 @@ void BaseRenderer::onRender() {
 	}
 	startTime = current;
 
-	for (auto& k : cam->downKeys) cam->onKey(k);
+	for (auto& k : downKeys) {
+		onKeyHold(k);
+	}
+
+	for (auto& k : downSpecialKeys) {
+		onSpecialKeyHold(k);
+	}
 
 	// Setup GL
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -149,11 +157,12 @@ void BaseRenderer::onRender() {
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
-	auto& eye = cam->eye;
-	auto& dir = cam->dir;
+	auto& eye = cam()->getEye();
+	auto& tar = cam()->getTarget();
+
 	gluLookAt(GLdouble(eye.x), GLdouble(eye.y), GLdouble(eye.z), 
-		GLdouble(eye.x + dir.x), GLdouble(eye.y + dir.y), GLdouble(eye.z + dir.z), 
-		0.0, 1.0, 0.0);
+		GLdouble(tar.x), GLdouble(tar.y), GLdouble(tar.z), 
+		GLdouble(UP_DIR.x), GLdouble(UP_DIR.y), GLdouble(UP_DIR.z));
 
 	// Render grid and axes
 	renderAxes();
@@ -244,8 +253,7 @@ void BaseRenderer::renderAxes() {
 void BaseRenderer::renderGrid(float size) {
 	glBegin(GL_LINES);
 	glColor4f(0.75f, 0.75f, 0.75f, 0.5f);
-	for (float i = -size; i <= size; i++)
-	{
+	for (float i = -size; i <= size; i++) {
 		glVertex3f(i, 0, -size);
 		glVertex3f(i, 0, size);
 

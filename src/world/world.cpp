@@ -131,11 +131,11 @@ void World::spawn(Player* player) {
 	PxCapsuleControllerDesc desc;
 
 	desc.material = shared_mat;
-	desc.height = 1.2f;
-	desc.radius = 0.5f;
+	desc.height = 1.5f;
+	desc.radius = 0.3f;
 	desc.slopeLimit = 0.f;
-	desc.contactOffset = 0.1f;
-	desc.stepOffset = 0.02f;
+	desc.contactOffset = 0.05f;
+	desc.stepOffset = 0.2f;
 	desc.userData = player;
 	desc.position = PxExtendedVec3(25.f, 25.f, 25.f);
 
@@ -183,21 +183,38 @@ void World::updatePlayers(float dt) {
 		PxVec3 side = dir.cross(PxVec3(0, 1, 0));
 
 		float ws = 0.f, ad = 0.f;
-		if (input.movL) ad = -1.f;
-		if (input.movR) ad = 1.f;
-		if (input.movB) ws = -1.f;
-		if (input.movF) ws = 1.f;
+		if (input.movL) ad += -1.f;
+		if (input.movR) ad += 1.f;
+		if (input.movB) ws += -1.f;
+		if (input.movF) ws += 1.f;
 
 		auto& state = player->state;
-		if (input.jump && !state.ground) state.velocity.y = 5.f;
+		if (input.jump && state.ground && !state.velocity.y) {
+			state.velocity.y = 15.f;
+		}
 
-		constexpr float moveSpeed = 2.5f;
-		PxVec3 movement = (ws * dir + ad * side).getNormalized() * moveSpeed;
+		PxVec3 movement;
 
-		auto airTick = tick - state.lastGroundTick;
-		auto fallV = airTick * (1.f / 60) * -9.81f;
+		if (state.ground) {
+			constexpr float moveSpeed = 5.f;
+			movement = (ws * dir + ad * side).getNormalized() * moveSpeed;
 
-		movement.y = player->state.velocity.y + fallV;
+			auto airTick = tick - state.lastGroundTick;
+			auto fallV = airTick * (1.f / 15) * -9.81f;
+
+			movement.y = state.velocity.y + fallV;
+
+			state.velocity.x = movement.x;
+			state.velocity.z = movement.z;
+		} else {
+
+			auto airTick = tick - state.lastGroundTick;
+			auto fallV = airTick * (1.f / 15) * -9.81f;
+
+			movement.y = state.velocity.y + fallV;
+			movement.x = state.velocity.x;
+			movement.z = state.velocity.z;
+		}
 
 		static const PxControllerFilters ctFilters(0);
 
@@ -238,6 +255,7 @@ void World::destroy(Player* player) {
 static std::random_device rd;
 static std::mt19937 gen(rd());
 static std::uniform_real_distribution<float> dist(-15, 15);
+static std::uniform_real_distribution<float> size_dist(1.f, 1.5f);
 
 static uint16_t objCount = 0;
 
@@ -247,16 +265,21 @@ void World::step(float dt, bool blocking) {
 		PxSceneWriteLock sl(*scene);
 		scoped_lock ol(object_mutex);
 
+#ifdef _DEBUG
+		constexpr uint16_t TOTAL_OBJ = 10;
+#else
 		constexpr uint16_t TOTAL_OBJ = 5000;
+#endif
 
 		if (objCount < TOTAL_OBJ) {
-			for (auto i = 0; i < std::max(1, TOTAL_OBJ / 200); i++) {
+			for (auto i = 0; i < std::max(1, TOTAL_OBJ / 1000); i++) {
+				auto size = 0.5f * powf(size_dist(gen), 3.f);
 				auto box = PxCreateDynamic(*physics, PxTransform(
-					PxVec3(dist(gen) * 2, 5.f, dist(gen) * 2)),
-					PxBoxGeometry(0.49f, 0.49f, 0.49f), *shared_mat, 5.0f);
+					PxVec3(dist(gen) * 2, 50.f, dist(gen) * 2)),
+					PxBoxGeometry(size, size, size), *shared_mat, 5.0f);
 				box->setAngularDamping(0.2f);
-				box->setLinearVelocity(PxVec3(dist(gen), dist(gen) * 2 + 40.f, dist(gen)));
-				box->setMaxLinearVelocity(50.f);
+				box->setLinearVelocity(PxVec3(size * dist(gen), size * dist(gen) * 4 + 40.f, size * dist(gen)));
+				box->setMaxLinearVelocity(size * 100.f);
 
 				auto obj = addObject<PrimitiveObject, false>(box);
 

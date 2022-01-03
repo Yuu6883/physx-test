@@ -11,8 +11,14 @@ void PhysXServer::Handle::onData(string_view buffer) {
 	bool error = false;
 	Reader r(buffer, error);
 
-	scoped_lock lock(input_mutex);
-	r.read<PlayerInput>(input);
+	{
+		scoped_lock lock(input_mutex);
+		r.read<PlayerInput>(input);
+	}
+
+	if (error) {
+		printf("[handle] input error\n");
+	}
 }
 
 void PhysXServer::Handle::updateState(World* world) {

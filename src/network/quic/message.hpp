@@ -154,12 +154,12 @@ public:
 	virtual void onData(string_view buffer) = 0;
 	virtual void disconnect() = 0;
 
-	void onBufferOverflow(uint64_t b) {
+	virtual void onBufferOverflow(uint64_t b) {
 		printf("[error] buffer overflow: %lu\n", b);
 		disconnect();
 	};
 
-	void onDecompressionFailed() {
+	virtual void onDecompressionFailed() {
 		printf("[error] decompression failed\n");
 		disconnect();
 	};

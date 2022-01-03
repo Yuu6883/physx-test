@@ -64,6 +64,7 @@ QUIC_STATUS ClientConnectionCallback(HQUIC conn, void* self, QUIC_CONNECTION_EVE
             // The handshake has completed for the connection.
             printf("[conn][%p] Connected\n", conn);
             // ClientSend(conn);
+            client->onConnect();
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
             // The connection has been shut down by the transport. Generally, this
@@ -86,6 +87,8 @@ QUIC_STATUS ClientConnectionCallback(HQUIC conn, void* self, QUIC_CONNECTION_EVE
             if (!event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
                 MsQuic->ConnectionClose(conn);
             }
+            client->onDisconnect();
+            client->cv.notify_all();
             break;
         case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
             // A resumption ticket (also called New Session Ticket or NST) was
@@ -217,21 +220,19 @@ bool QuicClient::connect(string host, uint16_t port) {
 }
 
 void QuicClient::disconnect() {
-    if (conn) {
+    if (isConnected()) {
         MsQuic->ConnectionShutdown(conn, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
-        conn = nullptr;
-        stream = nullptr;
+
+        mutex m;
+        std::unique_lock<mutex> lk(m);
+        cv.wait_for(lk, std::chrono::seconds{ 10 });
     };
-    // TODO: what to do to the connection
 }
 
-bool QuicClient::send(string_view buffer, bool freeAfterSend) {
+bool QuicClient::send(string_view buffer, bool freeAfterSend, uint8_t compression) {
     if (!stream) return false;
-    auto buffers = new QUIC_BUFFER[1];
-    buffers[0].Buffer = (uint8_t*) buffer.data();
-    buffers[0].Length = buffer.size();
-    auto req = new SendReq{ 1, buffers, freeAfterSend };
-    auto status = MsQuic->StreamSend(stream, buffers, 1, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
+    auto req = new SendReq(buffer, freeAfterSend, compression);
+    auto status = MsQuic->StreamSend(stream, req->buffers, 2, QUIC_SEND_FLAG_ALLOW_0_RTT, req);
     return !QUIC_FAILED(status);
 }
 

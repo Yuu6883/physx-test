@@ -33,23 +33,37 @@ void BaseClient::onData(string_view buffer) {
 	int64_t local = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 	// printf("%lu bytes | ping %li ms\n", buffer.size(), local - remote_now);
 
+	// Deserialize lock
+	m.lock();
+
 	uint16_t playerSize = r.read<uint32_t>();
 
 	for (int i = 0; i < playerSize; i++) {
 		auto pid = r.read<uint32_t>();
 		auto state = r.read<PlayerState>();
+
+		if (!i && !my_pid) my_pid = pid;
+
+		auto iter = player_map.find(pid);
+		if (iter == player_map.end()) {
+			auto player = addPlayer(pid, state);
+			if (!player) player = new NetworkedPlayer(pid, state);
+			player_map.insert({ pid, player });
+		} else {
+			auto player = iter->second;
+			player->onState(state);
+			player->state = state;
+		}
 	}
 
 	uint64_t cacheSize = r.read<uint32_t>();
 	if (data.size() != cacheSize) {
+		m.unlock();
 		printf("Cache size mismatch: %lu != %lu\n", data.size(), cacheSize);
 		disconnect();
 		exit(1);
 		return;
 	}
-
-	// Deserialize lock
-	m.lock();
 
 	// auto start = uv_hrtime(); // around 0.3ms for 4k objects
 

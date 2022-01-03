@@ -7,11 +7,39 @@
 
 using namespace std::chrono;
 
+static const PxQuat PLAYER_QUAT = PxQuat(0.f, 0.f, 1.f, 1.f).getNormalized();
+
+// Boom cam
+struct ThirdPersonCamera : AbstractCamera {
+	int mouseX = 0;
+	int mouseY = 0;
+	float speed = 1;
+	float dist = 10.f;
+
+	ThirdPersonCamera() : AbstractCamera(PxZero, PxVec3(1.f, 0.f, 0.f)) {};
+
+	const PxVec3 getEye() override {
+		return eye - dir * dist;
+	};
+
+	const PxVec3 getTarget() override {
+		return eye;
+	};
+};
+
 class GUIClient : public BaseClient, public BaseRenderer {
 
 	system_clock::time_point lastBandwidthUpdate = system_clock::now();
 	uint64_t lastTotalBytes = 0;
 	uint64_t bandwidth = 0;
+
+	bool roam = false;
+	ThirdPersonCamera tpc;
+
+	AbstractCamera* cam() {
+		if (roam) return &DefaultCamera;
+		else return &tpc;
+	};
 
 	class RenderableObject : public NetworkedObject {
 		bool sleeping = false;
@@ -22,6 +50,7 @@ class GUIClient : public BaseClient, public BaseRenderer {
 		PxQuat prevQuat;
 		PxQuat netQuat;
 
+	protected:
 		void onWake() { 
 			sleeping = false; 
 		};
@@ -118,10 +147,43 @@ class GUIClient : public BaseClient, public BaseRenderer {
 		void render();
 	};
 
+	class RenderablePlayer : public NetworkedPlayer, public Capsule {
+	public:
+		RenderablePlayer(uint32_t pid, const PlayerState& state) : 
+			NetworkedPlayer(pid, state), Capsule(0.3f, 0.75f) {
+			onAdd(state.position, PLAYER_QUAT);
+		};
+
+		void onState(const PlayerState& state) {
+			onUpdate(state.position, PLAYER_QUAT);
+		};
+
+		PxVec3 position() { return currPos; }
+	};
+
+	virtual void onMouseButton(int button, int mode, int x, int y);
+	virtual void onMouseMove(int x, int y);
+
 	virtual void render();
 	virtual void postRender();
+
 	virtual NetworkedObject* addObj(uint16_t type, uint16_t state, uint16_t flags, Reader& r);
+	virtual NetworkedPlayer* addPlayer(uint32_t pid, const PlayerState& state) { return new RenderablePlayer(pid, state); }
+
+	PlayerInput input;
+
+	void onKeyUp(unsigned char k);
+	void onKeyDown(unsigned char k);
+	void onSpecialKeyUp(int k);
+	void onSpecialKeyDown(int k);
+	void onKeyHold(unsigned char k);
+
+	void sendInput();
+
+	void render(RenderableObject* obj);
 
 public:
-	GUIClient::GUIClient() : BaseClient(), BaseRenderer("Client Renderer") {};
+	GUIClient::GUIClient() : BaseClient(), BaseRenderer("Client Renderer") {
+		glutSetCursor(roam ? GLUT_CURSOR_INHERIT : GLUT_CURSOR_NONE);
+	};
 };
